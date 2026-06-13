@@ -24,6 +24,7 @@ ring = { workspace = true }
 byteorder = { workspace = true }
 zerocopy = { workspace = true }
 anyhow = { workspace = true }
+uuid = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { workspace = true }

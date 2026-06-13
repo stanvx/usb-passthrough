@@ -88,7 +88,7 @@ pub struct UsbIpRetSubmit {
 }
 
 impl UsbIpRetSubmit {
-    pub const HEADER_SIZE: usize = 40;
+    pub const HEADER_SIZE: usize = 44;
 
     pub fn seqnum(&self) -> u32 {
         self.seqnum.get()

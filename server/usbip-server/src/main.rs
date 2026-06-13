@@ -3,6 +3,7 @@
 use clap::{Parser, Subcommand};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+use usbip_core::error::UsbIpResult;
 use usbip_server::{Server, ServerConfig};
 
 #[derive(Parser)]
@@ -50,7 +51,7 @@ fn parse_vid_pid(s: &str) -> Result<(u16, u16), String> {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> UsbIpResult<()> {
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
@@ -83,10 +84,10 @@ async fn main() -> anyhow::Result<()> {
                     dev.speed_val(),
                 );
             }
-        }
+        },
         None => {
             server.run().await?;
-        }
+        },
     }
 
     Ok(())

@@ -20,12 +20,13 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, info_span, warn};
+use uuid::Uuid;
 use zerocopy::FromBytes;
 use zerocopy::IntoBytes;
 
-use usbip_core::error::UsbIpResult;
 use usbip_core::error::ErrorKind;
+use usbip_core::error::UsbIpResult;
 use usbip_core::protocol::{
     UsbIpDeviceEntry, UsbIpHeader, OP_REP_DEVLIST, OP_REP_IMPORT, OP_REQ_DEVLIST, OP_REQ_IMPORT,
     STATUS_ST_DEV_BUSY, USBIP_CMD_SUBMIT,
@@ -33,6 +34,7 @@ use usbip_core::protocol::{
 use usbip_core::urb::UsbIpCmdSubmit;
 use usbip_core::USBIP_PORT;
 
+use crate::batcher::UrbBatcher;
 use crate::discovery::MdnsAdvertiser;
 use crate::urb_executor::UrbExecutor;
 use crate::usb::UsbDeviceManager;
@@ -122,6 +124,10 @@ async fn handle_client(
     exports: Arc<Mutex<HashMap<String, (SocketAddr, UsbIpDeviceEntry)>>>,
     config: ServerConfig,
 ) -> UsbIpResult<()> {
+    let correlation_id = Uuid::now_v7();
+    let span = info_span!("handle_client", correlation_id = %correlation_id);
+    let _guard = span.enter();
+
     if config.tcp_nodelay {
         stream.set_nodelay(true)?;
     }
@@ -234,7 +240,13 @@ async fn handle_urb_loop(
     busid: String,
     peer_addr: SocketAddr,
 ) -> UsbIpResult<()> {
+    let correlation_id = Uuid::now_v7();
+    let span =
+        info_span!("urb_loop", correlation_id = %correlation_id, busid = %busid, peer = %peer_addr);
+    let _guard = span.enter();
+
     let executor = UrbExecutor::new(usb.clone(), busid.clone());
+    let mut batcher = UrbBatcher::new();
     let mut header_buf = [0u8; 8];
 
     loop {
@@ -263,13 +275,23 @@ async fn handle_urb_loop(
                 }
 
                 let result = executor.execute(&cmd, &data);
-                let reply = executor.build_reply(&cmd, &result);
-                stream.write_all(&reply).await?;
+
+                // Batch the reply — flush when full, non-sequential, or timed out.
+                if batcher.push(&cmd, &result) {
+                    let batch = batcher.flush();
+                    stream.write_all(&batch).await?;
+                }
             },
             _ => {
                 debug!("Unknown command in URB loop: 0x{:04x}", header.command.get());
             },
         }
+    }
+
+    // Flush any remaining batched replies.
+    if !batcher.is_empty() {
+        let batch = batcher.flush();
+        let _ = stream.write_all(&batch).await;
     }
 
     usb.release_device(&busid)?;

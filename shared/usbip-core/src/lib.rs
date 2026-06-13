@@ -15,12 +15,14 @@
 pub mod crypto;
 pub mod descriptor;
 pub mod error;
+pub mod pool;
 pub mod protocol;
 pub mod urb;
 
 pub use crypto::*;
 pub use descriptor::*;
 pub use error::*;
+pub use pool::*;
 pub use protocol::*;
 pub use urb::*;
 

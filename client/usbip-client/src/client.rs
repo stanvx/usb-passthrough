@@ -18,7 +18,8 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::Mutex;
-use tracing::{error, info, warn};
+use tracing::{error, info, info_span, warn};
+use uuid::Uuid;
 
 use zerocopy::FromBytes;
 use zerocopy::IntoBytes;
@@ -143,6 +144,10 @@ impl Client {
         addr: SocketAddr,
         busid: &str,
     ) -> UsbIpResult<ImportedDevice> {
+        let correlation_id = Uuid::now_v7();
+        let span = info_span!("import_device", correlation_id = %correlation_id, busid = %busid, server = %addr);
+        let _guard = span.enter();
+
         let mut stream = TcpStream::connect(addr).await?;
         if self.config.tcp_nodelay {
             stream.set_nodelay(true)?;
@@ -267,6 +272,10 @@ async fn urb_forwarding_loop(
     _busid: String,
     _server_addr: SocketAddr,
 ) -> UsbIpResult<()> {
+    let correlation_id = Uuid::now_v7();
+    let span = info_span!("urb_forwarding_loop", correlation_id = %correlation_id, busid = %_busid, server = %_server_addr);
+    let _guard = span.enter();
+
     let mut header_buf = [0u8; 8];
     let _seqnum: u32 = 0;
 
