@@ -1,0 +1,176 @@
+# E2E Linux: QEMU-based USB gadget conformance tests
+#
+# Builds a minimal Linux kernel, boots it in QEMU with a BusyBox initramfs,
+# runs three USB gadget tests (HID, mass-storage, CDC-ACM) through the
+# usbip-server and usbip-client binaries, and collects structured JSON results.
+#
+# Triggers:
+#   - Push to main
+#   - Pull requests touching relevant paths
+# ────────────────────────────────────────────────────────────────────────────
+
+name: E2E Linux
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'ci/**'
+      - 'shared/usbip-core/**'
+      - 'server/**'
+      - 'client/**'
+      - '.github/workflows/e2e-linux.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  e2e:
+    name: E2E Tests (QEMU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86-64
+
+      - name: Cache kernel bzImage
+        id: cache-kernel
+        uses: actions/cache@v4
+        with:
+          path: ci/kernel/bzImage
+          key: kernel-${{ hashFiles('ci/kernel/config') }}
+
+      - name: Build kernel
+        if: steps.cache-kernel.outputs.cache-hit != 'true'
+        run: bash ci/build-kernel.sh
+        env:
+          CI: "true"
+
+      - name: Build initramfs
+        run: bash ci/build-initramfs.sh
+        env:
+          CI: "true"
+
+      - name: Cross-compile binaries
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl \
+            -p usbip-server -p usbip-client
+          mkdir -p ci/test_binaries
+          cp target/x86_64-unknown-linux-musl/release/usbip-server ci/test_binaries/
+          cp target/x86_64-unknown-linux-musl/release/usbip-client ci/test_binaries/
+          cp ci/e2e-test.sh ci/test_binaries/
+
+      - name: Run E2E tests
+        id: e2e
+        continue-on-error: true
+        run: bash ci/boot-qemu.sh --e2e
+        env:
+          CI: "true"
+
+      - name: Collect test results and generate step summary
+        if: always()
+        run: |
+          {
+            echo "## USB Device Conformance Results"
+            echo ""
+
+            if [ -f ci/test_binaries/results.jsonl ]; then
+              echo "| Test | Status | Duration | Detail |"
+              echo "|------|--------|----------|--------|"
+              while IFS= read -r line; do
+                test_name=$(echo "$line" | jq -r '.test // empty')
+                status=$(echo "$line" | jq -r '.status // "unknown"')
+                duration=$(echo "$line" | jq -r '.duration_ms // 0')
+                detail=$(echo "$line" | jq -r '.detail // ""')
+                if [ "$status" = "pass" ]; then
+                  icon="PASS"
+                elif [ "$status" = "fail" ]; then
+                  icon="FAIL"
+                else
+                  icon="SKIP"
+                fi
+                echo "| $test_name | $icon | ${duration}ms | ${detail} |"
+              done < ci/test_binaries/results.jsonl
+            else
+              echo "No structured test results found (results.jsonl missing)."
+              echo ""
+              echo "### Failure diagnostics"
+              if [ -f ci/kernel/qemu-serial.log ]; then
+                echo '```'
+                tail -50 ci/kernel/qemu-serial.log
+                echo '```'
+              else
+                echo "No QEMU serial log either — QEMU may not have started."
+              fi
+            fi
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Early failure diagnostics
+        if: steps.e2e.outcome == 'failure'
+        run: |
+          {
+            echo "### E2E Test Failure Diagnostics"
+            echo ""
+            # Determine failure stage from serial log markers
+            if [ -f ci/kernel/qemu-serial.log ]; then
+              if grep -q "Kernel panic" ci/kernel/qemu-serial.log; then
+                echo "**Kernel panic** — the kernel crashed during boot."
+              elif grep -q "Kernel alive" ci/kernel/qemu-serial.log 2>/dev/null; then
+                :  # not a marker we use
+              elif grep -q "Missing" ci/kernel/qemu-serial.log; then
+                echo "**Setup failure** — test binaries or modules missing."
+              fi
+
+              # Check if QEMU booted at all
+              if grep -q "CI Initramfs Booting" ci/kernel/qemu-serial.log; then
+                echo "- QEMU booted initramfs successfully."
+              elif [ -s ci/kernel/qemu-serial.log ]; then
+                echo "- **QEMU boot failed** — initramfs did not start."
+                echo ""
+                echo '```'
+                tail -30 ci/kernel/qemu-serial.log
+                echo '```'
+              else
+                echo "- **QEMU boot failed** — serial log is empty (VM may have hung or timed out)."
+              fi
+
+              # Check for specific test markers
+              if grep -q "GADGET_BIND_FAILED" ci/kernel/qemu-serial.log; then
+                echo "- **Test setup failed** — gadget bind to UDC failed (exit code 1)."
+              fi
+              if grep -q "SERVER_START_FAILED" ci/kernel/qemu-serial.log; then
+                echo "- **Test setup failed** — usbip-server failed to start (exit code 2)."
+              fi
+              if grep -q "DEVLIST_FAILED" ci/kernel/qemu-serial.log; then
+                echo "- **Test assertion failed** — device list query failed (exit code 3)."
+              fi
+              if grep -q "IMPORT_FAILED" ci/kernel/qemu-serial.log; then
+                echo "- **Test assertion failed** — device import failed (exit code 4)."
+              fi
+            else
+              echo "- **QEMU boot failed** — no serial log produced."
+            fi
+          } >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: |
+            ci/test_binaries/results.jsonl
+            ci/kernel/qemu-serial.log
+          if-no-files-found: ignore
