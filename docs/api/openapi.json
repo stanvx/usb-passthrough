@@ -1,0 +1,314 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AnyPlug USB/IP Server API",
+    "description": "REST API + WebSocket events for managing a USB/IP server.\n\nAll error responses follow the structured format with:\n- `correlation_id` (UUIDv7) — trace the error through logs\n- `category` — `transient`, `permanent`, or `fatal`\n- `message` — human-readable description",
+    "version": "0.1.0"
+  },
+  "servers": [
+    {
+      "url": "http://{host}:{port}",
+      "variables": {
+        "host": { "default": "localhost" },
+        "port": { "default": "3241" }
+      }
+    }
+  ],
+  "paths": {
+    "/api/status": {
+      "get": {
+        "summary": "Server status and metrics",
+        "description": "Returns server uptime, active connections, URB throughput, and error count.",
+        "operationId": "getStatus",
+        "responses": {
+          "200": {
+            "description": "Server status",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StatusResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices": {
+      "get": {
+        "summary": "List exported devices",
+        "description": "Returns all exportable USB devices with VID, PID, status, and connected client.",
+        "operationId": "getDevices",
+        "responses": {
+          "200": {
+            "description": "Device list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/DeviceResponse" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "summary": "Server configuration",
+        "description": "Returns current server configuration with secrets redacted.",
+        "operationId": "getConfig",
+        "responses": {
+          "200": {
+            "description": "Server configuration",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiConfig" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/connect": {
+      "post": {
+        "summary": "Connect to remote device",
+        "description": "Connect to a device on a remote USB/IP server.",
+        "operationId": "postConnect",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConnectRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Connected successfully"
+          },
+          "501": {
+            "description": "Not yet implemented",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/disconnect": {
+      "post": {
+        "summary": "Disconnect a device",
+        "description": "Disconnect a specific exported device by busid.",
+        "operationId": "postDisconnect",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DisconnectRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Disconnected successfully"
+          },
+          "501": {
+            "description": "Not yet implemented",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiErrorResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events": {
+      "get": {
+        "summary": "WebSocket event stream",
+        "description": "Upgrade to WebSocket. Streams real-time events:\n\n- `device-attach` — a USB device was physically attached\n- `device-detach` — a USB device was physically removed\n- `connection-state-change` — a client connected/disconnected\n- `error` — a server error occurred\n\nEach event is a JSON message:\n```json\n{\"event\": \"device-attach\", \"data\": {\"busid\": \"1-1\", \"vid\": 1133, \"pid\": 49761}}\n```",
+        "operationId": "wsEvents"
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "summary": "OpenAPI specification",
+        "description": "Returns this OpenAPI specification as JSON.",
+        "operationId": "getOpenApi",
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "StatusResponse": {
+        "type": "object",
+        "required": ["status", "uptime_seconds", "active_connections", "urb_throughput", "error_count"],
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Server status",
+            "example": "running"
+          },
+          "uptime_seconds": {
+            "type": "number",
+            "description": "Server uptime in seconds",
+            "example": 1234.56
+          },
+          "active_connections": {
+            "type": "integer",
+            "description": "Number of active client connections",
+            "example": 2
+          },
+          "urb_throughput": {
+            "type": "integer",
+            "description": "URB throughput counter",
+            "example": 15000
+          },
+          "error_count": {
+            "type": "integer",
+            "description": "Total error count",
+            "example": 0
+          }
+        }
+      },
+      "DeviceResponse": {
+        "type": "object",
+        "required": ["busid", "vid", "pid", "speed", "status", "path"],
+        "properties": {
+          "busid": {
+            "type": "string",
+            "description": "USB bus ID",
+            "example": "1-1"
+          },
+          "vid": {
+            "type": "integer",
+            "description": "USB vendor ID",
+            "example": 1133
+          },
+          "pid": {
+            "type": "integer",
+            "description": "USB product ID",
+            "example": 49761
+          },
+          "speed": {
+            "type": "integer",
+            "description": "USB speed code",
+            "example": 3
+          },
+          "status": {
+            "type": "string",
+            "description": "Device status: available or exported",
+            "example": "available"
+          },
+          "connected_client": {
+            "type": "string",
+            "description": "Connected client address, if exported",
+            "nullable": true,
+            "example": "192.168.1.5:45231"
+          },
+          "path": {
+            "type": "string",
+            "description": "Sysfs device path",
+            "example": "/sys/bus/usb/devices/1-1"
+          }
+        }
+      },
+      "ApiConfig": {
+        "type": "object",
+        "required": ["bind_address", "port", "encryption_enabled"],
+        "properties": {
+          "bind_address": {
+            "type": "string",
+            "description": "Server bind address",
+            "example": "0.0.0.0"
+          },
+          "port": {
+            "type": "integer",
+            "description": "USB/IP TCP port",
+            "example": 3240
+          },
+          "encryption_enabled": {
+            "type": "boolean",
+            "description": "Whether AES-256-GCM encryption is enabled",
+            "example": false
+          }
+        }
+      },
+      "ConnectRequest": {
+        "type": "object",
+        "required": ["host", "port", "busid"],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "Remote server hostname or IP",
+            "example": "192.168.1.100"
+          },
+          "port": {
+            "type": "integer",
+            "description": "Remote server port",
+            "example": 3240
+          },
+          "busid": {
+            "type": "string",
+            "description": "Device bus ID to connect to",
+            "example": "1-1"
+          }
+        }
+      },
+      "DisconnectRequest": {
+        "type": "object",
+        "required": ["busid"],
+        "properties": {
+          "busid": {
+            "type": "string",
+            "description": "Device bus ID to disconnect",
+            "example": "1-1"
+          }
+        }
+      },
+      "ApiErrorResponse": {
+        "type": "object",
+        "required": ["correlation_id", "category", "message"],
+        "properties": {
+          "correlation_id": {
+            "type": "string",
+            "description": "UUIDv7 correlation ID for tracing",
+            "example": "0196a8b3-e72e-71b6-9f3e-ba3b9d4a6f89"
+          },
+          "category": {
+            "type": "string",
+            "description": "Error category: transient, permanent, or fatal",
+            "example": "permanent"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable error message",
+            "example": "Remote connection not yet implemented"
+          }
+        }
+      }
+    }
+  }
+}

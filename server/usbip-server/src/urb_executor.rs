@@ -45,8 +45,10 @@ impl UrbExecutor {
     /// produce a valid wire reply.
     pub fn execute(&self, cmd: &UsbIpCmdSubmit, out_data: &[u8]) -> UrbResult {
         match self.usb.execute_urb(&self.busid, cmd, out_data) {
-            Ok((status, actual_len, in_data)) => {
-                UrbResult { status, actual_length: actual_len, data: in_data }
+            Ok(transfer) => UrbResult {
+                status: transfer.status,
+                actual_length: transfer.actual_length,
+                data: transfer.data,
             },
             Err(e) => {
                 let urb_status = match e.kind() {

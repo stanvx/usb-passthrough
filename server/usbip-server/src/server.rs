@@ -34,6 +34,7 @@ use usbip_core::protocol::{
 use usbip_core::urb::UsbIpCmdSubmit;
 use usbip_core::USBIP_PORT;
 
+use crate::api;
 use crate::batcher::UrbBatcher;
 use crate::discovery::MdnsAdvertiser;
 use crate::urb_executor::UrbExecutor;
@@ -113,6 +114,62 @@ impl Server {
     /// Get list of exportable devices.
     pub async fn exportable_devices(&self) -> Vec<UsbIpDeviceEntry> {
         self.usb.list_devices()
+    }
+
+    /// Run the USB/IP server together with the REST API.
+    ///
+    /// The API is served on `api_port` (default: 3241).
+    pub async fn run_with_api(&self, api_port: u16) -> UsbIpResult<()> {
+        // Build the API router
+        let api_state = api::AppState {
+            start_time: std::time::Instant::now(),
+            exports: self.exports.clone(),
+            mock_devices: None,
+            config: api::ApiConfig {
+                bind_address: self.config.bind_address.clone(),
+                port: self.config.port,
+                encryption_enabled: self.config.encryption_enabled,
+            },
+        };
+
+        let api_router = api::build_router(api_state);
+        let api_addr = format!("{}:{}", self.config.bind_address, api_port);
+
+        // Start both servers in separate tasks using tokio::select!
+        let usb_addr = format!("{}:{}", self.config.bind_address, self.config.port);
+        let listener = TcpListener::bind(&usb_addr).await?;
+        info!("USB/IP server listening on {}", usb_addr);
+
+        // Start mDNS advertising
+        if let Some(ref mdns) = self.mdns {
+            mdns.start()?;
+            info!("mDNS advertising _usbip._tcp.local");
+        }
+
+        // Spawn the API server
+        let api_listener = tokio::net::TcpListener::bind(&api_addr).await?;
+        info!("REST API listening on {}", api_addr);
+        tokio::spawn(async move {
+            axum::serve(api_listener, api_router).await.unwrap_or_else(|e| {
+                tracing::error!("API server error: {}", e);
+            });
+        });
+
+        // USB/IP accept loop (same as run())
+        loop {
+            let (stream, peer_addr) = listener.accept().await?;
+            info!("Client connected from {}", peer_addr);
+
+            let usb = self.usb.clone();
+            let exports = self.exports.clone();
+            let config = self.config.clone();
+
+            tokio::spawn(async move {
+                if let Err(e) = handle_client(stream, peer_addr, usb, exports, config).await {
+                    error!("Client {} error: {}", peer_addr, e);
+                }
+            });
+        }
     }
 }
 
