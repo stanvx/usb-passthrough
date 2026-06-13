@@ -132,3 +132,17 @@ Release workflow (`.github/workflows/release.yml`) handles multi-platform binary
 | `docs/G920-SPECIFIC.md` | Reference device quirks |
 | `docs/ANDROID-TV.md` | TV-specific setup, sideloading, remote nav |
 | `docs/adr/` | Architecture Decision Records (3 ADRs) |
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Standard labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
