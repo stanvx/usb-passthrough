@@ -1,0 +1,70 @@
+name: Performance Gate
+
+on:
+  pull_request:
+    paths:
+      - 'shared/usbip-core/**'
+      - 'server/usbip-server/**'
+      - 'client/usbip-client/**'
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install libusb (build dependency)
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev
+
+      - name: Build benchmark
+        run: cargo build --release -p usbip-server --bin usbip-bench
+
+      - name: Run benchmark
+        run: cargo run --release -p usbip-server --bin usbip-bench -- --iterations 10000 --format json > benchmark-results.json
+
+      - name: Check perf gate
+        run: |
+          P99_PASS=$(jq -r '.p99_pass' benchmark-results.json)
+          echo "Benchmark results:"
+          cat benchmark-results.json | jq '.benchmarks[] | "\(.name): p99=\(.p99_us)us"'
+          if [ "$P99_PASS" != "true" ]; then
+            echo "PERF GATE FAILED: p99 latency exceeds 5ms threshold"
+            exit 1
+          fi
+          echo "Perf gate passed (p99 < 5ms for all benchmarks)"
+
+      - name: Post benchmark summary
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('benchmark-results.json', 'utf8'));
+
+            const rows = results.benchmarks.map(b =>
+              `| ${b.name} | ${b.avg_us.toFixed(1)} us | ${b.p50_us.toFixed(1)} us | ${b.p95_us.toFixed(1)} us | ${b.p99_us.toFixed(1)} us | ${b.max_us.toFixed(1)} us |`
+            ).join('\n');
+
+            const body = `## Performance Benchmark
+            | Benchmark | Avg | p50 | p95 | p99 | Max |
+            |-----------|-----|-----|-----|-----|-----|
+            ${rows}
+
+            **Gate**: p99 < 5ms — ${results.p99_pass ? 'PASS' : 'FAIL'}
+            `;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body
+            });
