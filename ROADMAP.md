@@ -1,89 +1,190 @@
 # USB/IP Passthrough — Development Roadmap
 
-> Cross-platform USB/IP implementation for Android, Android TV, and Windows.
+Project roadmap and milestone tracking for the USB/IP passthrough system.
 
 ---
 
-## Milestone 1: Foundation & Protocol Core (Q2 2026)
+## Legend
 
-| Status | Task |
-|--------|------|
-| ☐ | Define crate graph in workspace `Cargo.toml` |
-| ☐ | Implement `shared/usbip-core` — USB/IP protocol constants, headers, packet serialization |
-| ☐ | Document USB/IP protocol spec references and wire format |
-| ☐ | Add comprehensive unit tests for all packet types |
-| ☐ | Set up CI (cargo check + test) passing green |
-
-**Goal:** A verified protocol library with zero unsafe code.
+| Icon | Meaning |
+|------|---------|
+| ✅ | Done |
+| 🔧 | In progress |
+| 📅 | Planned |
+| 💡 | Future idea |
 
 ---
 
-## Milestone 2: Server & Client (Q3 2026)
+## Milestone 1: Core Protocol ✅
 
-| Status | Task |
-|--------|------|
-| ☐ | Implement `server/usbip-server` — TCP listener, virtual host controller, device export |
-| ☐ | Implement `client/usbip-client` — TCP connector, USB device driver binding |
-| ☐ | Integration tests: server ↔ client loopback |
-| ☐ | CLI binaries with `--help` and config file support |
-| ☐ | Error handling, reconnection, logging |
+- [x] USB/IP protocol v1.1.1 wire format (`shared/usbip-core/src/protocol.rs`)
+- [x] URB types: CMD_SUBMIT, RET_SUBMIT, RET_UNLINK (`shared/usbip-core/src/urb.rs`)
+- [x] Device descriptor enumeration
+- [x] Device list (OP_REQ_DEVLIST / OP_REP_DEVLIST)
+- [x] Device import (OP_REQ_IMPORT / OP_REP_IMPORT)
+- [x] Big-endian wire encoding (UsbIpHeader, UsbIpDeviceEntry)
+- [x] Maximum message size handling (1 MiB buffer)
+- [x] Comprehensive unit tests for protocol types
 
-**Goal:** `usbipd` and `usbip` CLI tools working on Linux.
+## Milestone 2: Encryption ✅
+
+- [x] AES-256-GCM encrypt/decrypt (`shared/usbip-core/src/crypto.rs`)
+- [x] X25519 ECDH key exchange
+- [x] Per-message nonce generation
+- [x] HKDF-based session key derivation
+- [x] `encrypt_usbip_message` / `decrypt_usbip_message` high-level API
+- [x] Key pair generation and hex encoding
+- [x] Test vectors (RFC 7748 Section 6.1)
+- [x] JNI-friendly key management functions
+
+## Milestone 3: mDNS Discovery ✅
+
+- [x] Server mDNS advertisement (`_usbip._tcp.local.`) (`server/usbip-server/src/discovery.rs`)
+- [x] Client mDNS browsing (`client/usbip-client/src/discovery.rs`)
+- [x] 2-second discovery timeout
+- [x] Service properties (version, platform)
+- [x] Graceful shutdown of mDNS daemon
+
+## Milestone 4: Linux Server ✅
+
+- [x] libusb-based USB device enumeration (`server/usbip-server/src/usb.rs`)
+- [x] Concurrent client handling (tokio async)
+- [x] TCP listener on port 3240
+- [x] Device export with optional VID:PID allowlist
+- [x] Connection confirmation prompt
+- [x] CLI with clap (`server/usbip-server/src/main.rs`)
+- [x] `usbip-server list` command
+- [x] Configurable bind address and port
+- [x] Encryption enable/disable
+
+## Milestone 5: Linux Client ✅
+
+- [x] TCP connection to remote server (`client/usbip-client/src/client.rs`)
+- [x] Device import protocol
+- [x] VHCI kernel module integration (`client/usbip-client/src/vhci.rs`)
+- [x] uinput fallback for non-VHCI systems
+- [x] URB submission loop
+- [x] CLI with clap (`client/usbip-client/src/main.rs`)
+- [x] `--discover`, `--list`, `--connect` commands
+- [x] TCP_NODELAY enabled
+
+## Milestone 6: Windows Support ✅
+
+- [x] Win32 SetupAPI USB enumeration (`windows/src/windows_usb.rs`)
+- [x] G920 VID/PID detection (0x046D:0xC261 / 0xC262)
+- [x] egui system tray GUI (`windows/src/main.rs`)
+- [x] Windows Service integration (`windows-service` crate)
+- [x] Service install/start/stop commands
+- [x] UAC-aware admin elevation
+- [x] Firewall rule management
+- [x] Portable and installer distribution
+
+## Milestone 7: Android App ✅
+
+- [x] Kotlin JNI bridge (`android/app/src/main/java/.../bridge/RustBridge.kt`)
+- [x] Jetpack Compose UI (`android/app/src/main/java/.../ui/MainScreen.kt`)
+- [x] Server mode with USB Host API (`UsbIpServer.kt`)
+- [x] Client mode with TCP protocol (`UsbIpClient.kt`)
+- [x] Foreground service with wake lock (`UsbPassthroughService.kt`)
+- [x] mDNS discovery in UI
+- [x] Rust compilation via rust-android-gradle plugin
+- [x] Gradle build system
+
+## Milestone 8: Android TV 🔧
+
+- [x] TV-specific Compose UI (`android/tv/src/main/java/.../tv/TvMainActivity.kt`)
+- [x] D-pad remote navigation
+- [x] Foreground service on TV
+- [x] Server and client modes
+- [ ] Power management optimization for TV use
+- [ ] Leanback UI extensions (headers, browse fragment)
+- [ ] Google Play Store listing preparation
+- [ ] TV input framework integration
+
+## Milestone 9: Documentation ✅
+
+- [x] README.md — project overview
+- [x] ARCHITECTURE.md — system design
+- [x] PROTOCOL.md — wire protocol reference
+- [x] ROADMAP.md — milestone tracking
+- [x] docs/SETUP.md — platform setup guides
+- [x] docs/TROUBLESHOOTING.md — diagnosis and fixes
+- [x] docs/G920-SPECIFIC.md — G920 deep dive
+- [x] docs/ANDROID-TV.md — TV-specific guide
+- [x] docs/PERFORMANCE.md — latency, benchmarks, tuning
+- [x] docs/BUILDING.md — compilation from source
+
+## Milestone 10: CI/CD Pipeline 🔧
+
+- [x] GitHub Actions workflow
+- [x] Rust test suite execution
+- [x] Linux binary builds (x86_64)
+- [x] Windows binary builds (x86_64)
+- [ ] Android APK builds in CI
+- [ ] Windows installer builds in CI
+- [ ] Automated release creation
+- [ ] Multi-arch Linux builds (ARM64, ARMv7)
+
+## Milestone 11: Performance Optimization 📅
+
+- [ ] URB buffer pool sizing auto-tuning
+- [ ] Zero-copy URB forwarding where possible
+- [ ] Batch URB submission for high-throughput devices
+- [ ] Memory-mapped VHCI ring buffer (Linux)
+- [ ] Adaptive polling interval for Android
+- [ ] TCP buffer auto-tuning guide
+- [ ] Profiling benchmarks published
+
+## Milestone 12: Platform Expansion 📅
+
+- [ ] macOS server (I/O Kit USB enumeration)
+- [ ] macOS client (IOUSBFamily / uinput alternative)
+- [ ] Docker container for server deployment
+- [ ] Web-based management UI
+- [ ] REST API for server status/control
+
+## Milestone 13: Advanced Features 💡
+
+- [ ] Hot-plug support (detect device attach/detach after server start)
+- [ ] Multiple simultaneous client connections to different devices
+- [ ] USB isochronous transfer support (audio/video devices)
+- [ ] Bandwidth throttling per client
+- [ ] Session persistence and auto-reconnect
+- [ ] End-to-end latency monitoring dashboard
+- [ ] Prometheus metrics endpoint (RUST_LOG structured metrics)
+- [ ] USB 3.0 SuperSpeed support (up to 5 Gbps)
+- [ ] IPv6 support
+
+## Milestone 14: Ecosystem 💡
+
+- [ ] Home Assistant add-on
+- [ ] RetroPie / Lakka integration
+- [ ] Steam Link / Moonlight companion
+- [ ] Web frontend for device management
+- [ ] Mobile companion app (iOS?)
+- [ ] Community plugin: USB/IP to network bridge for VM hosts
 
 ---
 
-## Milestone 3: GUI Windows Client (Q3 2026)
+## Version History
 
-| Status | Task |
-|--------|------|
-| ☐ | egui-based Windows app in `windows/` crate |
-| ☐ | Connect to remote USB/IP server |
-| ☐ | List, attach, detach devices from GUI |
-| ☐ | MSVC release build in CI |
-| ☐ | Windows installer (MSI/WiX) |
-
-**Goal:** One-click USB/IP client for Windows.
+| Version | Date | Milestones |
+|---------|------|------------|
+| 0.1.0 | — | Core protocol, encryption, mDNS |
+| 0.2.0 | — | Linux server + client, Windows support |
+| 0.3.0 | — | Android app (phone + TV) |
+| 0.4.0 | — | Documentation complete, CI/CD |
+| 1.0.0 | TBD | Stable release with all milestones 1-10 |
 
 ---
 
-## Milestone 4: Android Native Library (Q4 2026)
+## Contributing
 
-| Status | Task |
-|--------|------|
-| ☐ | `android/rust/usbip-android` — JNI cdylib bridge |
-| ☐ | Gradle project with AGP 8.2 + Kotlin 1.9.20 |
-| ☐ | Android service wrapper (foreground service, USB permission handling) |
-| ☐ | Android TV UI (leanback-friendly) |
-| ☐ | Release APK build in CI |
+See the [ARCHITECTURE.md](ARCHITECTURE.md) for design details and [BUILDING.md](docs/BUILDING.md) for build instructions.
 
-**Goal:** Sideloadable APK for Android TV USB gadget support.
-
----
-
-## Milestone 5: Polish & Release (Q1 2027)
-
-| Status | Task |
-|--------|------|
-| ☐ | Signed Windows binaries |
-| ☐ | Android app on GitHub Releases with changelog |
-| ☐ | Performance benchmarking & optimization |
-| ☐ | Security audit (no unsafe, no network vulns) |
-| ☐ | Documentation site / README with architecture diagram |
-
-**Goal:** v1.0.0 — production-ready cross-platform USB/IP solution.
-
----
-
-## How to Release
-
-```bash
-# Tag and push
-git tag v0.1.0
-git push origin v0.1.0
-
-# CI builds:
-#   usbip-windows-x86_64.exe   (Windows EXE, MSVC)
-#   usbip-android-release.apk  (Android APK)
-```
-
-All builds are handled by `.github/workflows/release.yml`.
+Key areas for contribution:
+- Debugging and fixing URB transfer edge cases
+- Adding macOS support
+- Performance profiling on Raspberry Pi / low-end devices
+- Testing with non-Logitech USB devices
+- Translation of documentation
