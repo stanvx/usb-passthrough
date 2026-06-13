@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  anyplug-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: anyplug-server:latest
+    container_name: anyplug-server
+    ports:
+      - "3240:3240/tcp"
+    environment:
+      USBIP_BIND_ADDRESS: "0.0.0.0"
+      USBIP_PORT: "3240"
+      USBIP_ENCRYPTION: "false"
+      USBIP_ALLOWED_DEVICES: ""
+    volumes:
+      # Mount a config file for persistent configuration
+      - ./config.toml:/etc/anyplug/config.toml:ro
+      # Access to USB devices on the host
+      - /dev/bus/usb:/dev/bus/usb
+    devices:
+      - /dev/bus/usb
+    restart: unless-stopped
+    network_mode: host
+    privileged: true

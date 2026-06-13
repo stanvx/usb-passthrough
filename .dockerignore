@@ -1,0 +1,9 @@
+target/
+.git/
+.github/
+android/
+*.md
+!README.md
+docker-compose.yml
+Dockerfile
+.dockerignore
