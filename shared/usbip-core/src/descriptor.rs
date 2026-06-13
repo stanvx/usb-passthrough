@@ -301,34 +301,3 @@ impl UsbDeviceInfo {
         Some(Self { device, configs })
     }
 }
-
-// ─── G920-Specific Constants ────────────────────────────────────
-
-/// Logitech G920 vendor and product IDs.
-pub mod g920 {
-    /// G920 in Xbox mode.
-    pub const VID: u16 = 0x046d;
-    pub const PID_XBOX: u16 = 0xc261;
-    /// G920 in PS4 mode.
-    pub const PID_PS4: u16 = 0xc262;
-
-    /// Known interface classes for G920.
-    pub const HID_CLASS: u8 = 0x03;
-    pub const HID_SUBCLASS_BOOT: u8 = 0x01;
-
-    /// G920 steering wheel endpoint layout.
-    pub const EP_WHEEL_IN: u8 = 0x81;  // IN, Interrupt, 64 bytes
-    pub const EP_WHEEL_OUT: u8 = 0x01; // OUT, Interrupt, 64 bytes (FFB)
-    pub const EP_PEDALS_IN: u8 = 0x82; // IN, Interrupt, 8 bytes
-
-    /// FFB command structure (HID SET_REPORT to EP 0x01 OUT).
-    pub const FFB_REPORT_ID: u8 = 0x01;
-    pub const FFB_CMD_START: u8 = 0x01;
-    pub const FFB_CMD_STOP: u8 = 0x02;
-    pub const FFB_CMD_UPDATE: u8 = 0x03;
-
-    /// Check if a VID:PID pair is a G920.
-    pub fn is_g920(vid: u16, pid: u16) -> bool {
-        vid == VID && (pid == PID_XBOX || pid == PID_PS4)
-    }
-}
