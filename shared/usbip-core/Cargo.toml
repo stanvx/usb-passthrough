@@ -8,11 +8,15 @@ description = "USB/IP protocol types and serialization — shared between server
 
 [dependencies]
 byteorder.workspace = true
-zerocopy.workspace = true
+zerocopy = { workspace = true, features = ["derive"] }
 crc32fast.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 ring.workspace = true
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rusb.workspace = true

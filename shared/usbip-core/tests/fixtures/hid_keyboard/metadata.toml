@@ -1,0 +1,16 @@
+[device]
+vendor_id = 0x1d6b
+product_id = 0x0104
+device_class = 0
+max_packet_size0 = 64
+
+[config]
+num_configs = 1
+
+[interface]
+class = 3
+num_endpoints = 1
+
+[[endpoints]]
+address = 0x81
+transfer_type = "interrupt"
