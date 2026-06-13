@@ -1,7 +1,7 @@
 //! USB/IP wire protocol constants, header types, and message construction.
 
 use zerocopy::byteorder::{BigEndian, I32, U16, U32};
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 /// Re-export big-endian types for convenience.
 pub type U16BE = U16<BigEndian>;
@@ -54,7 +54,7 @@ pub const URB_DIR_OUT: u32 = 0;
 // ─── Wire-Format Structs ─────────────────────────────────────────
 
 /// The 8-byte header that starts every USB/IP message.
-#[derive(Debug, Clone, AsBytes, FromBytes, FromZeroes)]
+#[derive(Debug, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct UsbIpHeader {
     pub version: U16BE,
@@ -83,7 +83,7 @@ impl UsbIpHeader {
 }
 
 /// A single device entry in OP_REP_DEVLIST (312 bytes).
-#[derive(Debug, Clone, AsBytes, FromBytes, FromZeroes)]
+#[derive(Debug, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct UsbIpDeviceEntry {
     pub path: [u8; 256],

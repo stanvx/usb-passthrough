@@ -167,6 +167,106 @@ round-trip test in `shared/usbip-core/src/protocol.rs`. The CI pipeline
 commands across Linux, Windows, and Android; please verify locally before
 pushing to avoid burning CI minutes on a typo.
 
+## Adding a USB Descriptor Fixture
+
+The project uses captured USB descriptor trees as test fixtures. These are
+used by the integration test in `shared/usbip-core/tests/descriptor_fixtures.rs`
+to verify that the descriptor parser correctly handles real-world devices.
+
+### Capturing a descriptor dump
+
+On Linux, use `lsusb` to dump the raw descriptor tree for a device:
+
+```bash
+# Find your device's bus and device number
+lsusb
+
+# Dump the full descriptor tree (requires root for some devices)
+sudo lsusb -d 046d:c261 -v 2>&1 | less
+
+# For a raw hex dump, use usbmon or usbhid-dump:
+sudo usbhid-dump -e descriptor -d 046d:c261
+```
+
+On Windows, use [USB Device Tree Viewer](https://www.uwe-sieber.de/usbtreeview_e.html)
+(Uwe Sieber) or `usbview` from the Windows SDK to inspect descriptor trees.
+You can also capture raw descriptors from a USB/IP server log by enabling
+`RUST_LOG=debug`.
+
+On macOS, use the `system_profiler SPUSBDataType` command or the I/O Registry:
+
+```bash
+system_profiler SPUSBDataType
+ioreg -p IOUSB -l -w 0
+```
+
+### Creating a new fixture
+
+1.  Choose a descriptive name (e.g. `logitech_g502`, `hid_keyboard`).
+
+2.  Create the fixture directory:
+
+    ```bash
+    mkdir -p shared/usbip-core/tests/fixtures/<name>
+    ```
+
+3.  Place the raw descriptor tree bytes in `descriptor.bin`. The bytes must be
+    in standard USB descriptor order (little-endian multi-byte fields):
+
+    ```
+    Device Descriptor (18 bytes)  →  type 0x01
+    Configuration Descriptor (9)  →  type 0x02
+        Interface Descriptor (9)  →  type 0x04
+        [Class-specific descriptors, e.g. HID 0x21]
+        Endpoint Descriptors (7)  →  type 0x05
+    [Repeat for additional configurations]
+    ```
+
+    If you do not have a raw byte dump, you can construct one programmatically
+    using the struct layout documented in `shared/usbip-core/src/descriptor.rs`.
+
+4.  Create `metadata.toml` declaring the expected fields. Every field is
+    optional; omit fields you do not want to assert:
+
+    ```toml
+    [device]
+    vendor_id = 0x046d
+    product_id = 0xc261
+    device_class = 0
+    max_packet_size0 = 64
+
+    [config]
+    num_configs = 1
+
+    [interface]
+    class = 3
+    num_endpoints = 1
+
+    [[endpoints]]
+    address = 0x81
+    transfer_type = "interrupt"
+    ```
+
+    For the full schema reference, see
+    `shared/usbip-core/tests/fixtures/README.md`.
+
+5.  Run the fixture test to verify:
+
+    ```bash
+    cargo test -p usbip-core --test descriptor_fixtures
+    ```
+
+    The test will parse `descriptor.bin` and assert every field present in
+    `metadata.toml`. If a field does not match, the test prints the fixture
+    name, the field name, the expected value, and the actual value.
+
+6.  Commit the fixture directory:
+
+    ```bash
+    git add shared/usbip-core/tests/fixtures/<name>/
+    git commit -m "test(fixtures): add <device> descriptor fixture"
+    ```
+
 ## Coding Style
 
 We optimise for code that is **boring, small, and immutable**.

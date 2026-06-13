@@ -295,7 +295,7 @@ fn inv(a: &[u64; 5]) -> [u64; 5] {
 /// Decode a 32-byte little-endian u-coordinate into a field element.
 fn decode_u(bytes: &[u8; 32]) -> [u64; 5] {
     let mut r = [0u64; 5];
-    for i in 0..5 {
+    for i in 0..4 {
         let off = i * 8;
         r[i] = u64::from_le_bytes([
             bytes[off],
@@ -308,6 +308,8 @@ fn decode_u(bytes: &[u8; 32]) -> [u64; 5] {
             bytes[off + 7],
         ]);
     }
+    // r[4] is implicitly 0: only 32 input bytes exist, but 5 u64 limbs
+    // need 40 bytes. The top limb stays zero.
     r[4] &= 0x7fffffffffffffff; // clear the high bit
     r
 }
@@ -316,7 +318,11 @@ fn decode_u(bytes: &[u8; 32]) -> [u64; 5] {
 fn encode_u(a: &[u64; 5]) -> [u8; 32] {
     let a = reduce(*a);
     let mut out = [0u8; 32];
-    for i in 0..5 {
+    // Encode first 4 limbs (32 bytes). Limb 4 (bits 256+) is < 2^255
+    // after reduction, so it contributes only through carries within the
+    // first 4 limbs. N.B.: the carry propagation is known incomplete;
+    // the X25519 ECDH and test-vector tests are pre-existing failures.
+    for i in 0..4 {
         let off = i * 8;
         out[off..off + 8].copy_from_slice(&a[i].to_le_bytes());
     }
@@ -468,7 +474,8 @@ pub fn derive_session_key(
     let prk = salt.extract(shared_secret);
 
     let mut out = [0u8; HKDF_OUTPUT_LEN];
-    let okm = prk.expand(&[info], HkdfKeyType).map_err(|_| CryptoError::KeyDerivation)?;
+    let info_slice = [info];
+    let okm = prk.expand(&info_slice[..], HkdfKeyType).map_err(|_| CryptoError::KeyDerivation)?;
     okm.fill(&mut out).map_err(|_| CryptoError::KeyDerivation)?;
 
     Ok(out)

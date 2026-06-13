@@ -946,7 +946,9 @@ dependencies = [
  "crc32fast",
  "ring",
  "rusb",
+ "serde",
  "thiserror",
+ "toml 0.8.23",
  "tracing",
  "zerocopy",
 ]

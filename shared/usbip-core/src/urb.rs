@@ -1,14 +1,14 @@
 //! USB Request Block (URB) types — the core data-transfer primitives.
 
 use zerocopy::byteorder::{BigEndian, U32};
-use zerocopy::{AsBytes, FromBytes, FromZeroes};
+use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 pub type U32BE = U32<BigEndian>;
 
 /// USBIP_CMD_SUBMIT — Client requests a USB transfer.
 ///
 /// Wire format (80 bytes + variable data for OUT transfers):
-#[derive(Debug, Clone, AsBytes, FromBytes, FromZeroes)]
+#[derive(Debug, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct UsbIpCmdSubmit {
     pub seqnum: U32BE,
@@ -71,7 +71,7 @@ impl UsbIpCmdSubmit {
 }
 
 /// USBIP_RET_SUBMIT — Server responds to a URB submission.
-#[derive(Debug, Clone, AsBytes, FromBytes, FromZeroes)]
+#[derive(Debug, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct UsbIpRetSubmit {
     pub seqnum: U32BE,
@@ -129,7 +129,7 @@ impl UsbIpRetSubmit {
 }
 
 /// USBIP_RET_UNLINK — Server notifies client that a URB was cancelled.
-#[derive(Debug, Clone, AsBytes, FromBytes, FromZeroes)]
+#[derive(Debug, Clone, IntoBytes, FromBytes, KnownLayout, Immutable)]
 #[repr(C, packed)]
 pub struct UsbIpRetUnlink {
     pub seqnum: U32BE,
@@ -167,7 +167,7 @@ impl UsbIpMessage {
         if self.header.command.get() != super::protocol::USBIP_CMD_SUBMIT {
             return None;
         }
-        UsbIpCmdSubmit::ref_from_prefix(&self.payload)
+        UsbIpCmdSubmit::ref_from_prefix(&self.payload).ok().map(|(r, _)| r)
     }
 
     /// Parse a RET_SUBMIT from the payload.
@@ -175,7 +175,7 @@ impl UsbIpMessage {
         if self.header.command.get() != super::protocol::USBIP_RET_SUBMIT {
             return None;
         }
-        UsbIpRetSubmit::ref_from_prefix(&self.payload)
+        UsbIpRetSubmit::ref_from_prefix(&self.payload).ok().map(|(r, _)| r)
     }
 
     /// Parse a RET_UNLINK from the payload.
@@ -183,7 +183,7 @@ impl UsbIpMessage {
         if self.header.command.get() != super::protocol::USBIP_RET_UNLINK {
             return None;
         }
-        UsbIpRetUnlink::ref_from_prefix(&self.payload)
+        UsbIpRetUnlink::ref_from_prefix(&self.payload).ok().map(|(r, _)| r)
     }
 }
 
@@ -209,5 +209,98 @@ impl UrbBuffer {
 
     pub fn reset(&mut self) {
         self.buf.fill(0);
+    }
+}
+
+// ─── Tests ────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{URB_DIR_IN, URB_DIR_OUT};
+    use zerocopy::IntoBytes;
+
+    /// Construct a synthetic UsbIpCmdSubmit with caller-specified parameters.
+    /// All unspecified fields use sensible defaults.
+    fn build_cmd_submit(
+        endpoint: u32,
+        direction: u32,
+        transfer_buffer_length: u32,
+        setup: [u8; 8],
+    ) -> UsbIpCmdSubmit {
+        let flags = if direction == 1 { URB_DIR_IN } else { URB_DIR_OUT };
+        UsbIpCmdSubmit {
+            seqnum: U32BE::new(1),
+            devid: U32BE::new(1),
+            direction: U32BE::new(direction),
+            ep: U32BE::new(endpoint),
+            transfer_flags: U32BE::new(flags),
+            transfer_buffer_length: U32BE::new(transfer_buffer_length),
+            start_frame: U32BE::new(0),
+            number_of_packets: U32BE::new(0),
+            interval: U32BE::new(0),
+            setup,
+        }
+    }
+
+    /// Construct a synthetic UsbIpRetSubmit with caller-specified parameters.
+    fn build_ret_submit(
+        seqnum: u32,
+        devid: u32,
+        direction: u32,
+        ep: u32,
+        status: u32,
+        actual_length: u32,
+    ) -> UsbIpRetSubmit {
+        UsbIpRetSubmit {
+            seqnum: U32BE::new(seqnum),
+            devid: U32BE::new(devid),
+            direction: U32BE::new(direction),
+            ep: U32BE::new(ep),
+            status: U32BE::new(status),
+            actual_length: U32BE::new(actual_length),
+            start_frame: U32BE::new(0),
+            number_of_packets: U32BE::new(0),
+            error_count: U32BE::new(0),
+            setup: [0u8; 8],
+        }
+    }
+
+    #[test]
+    fn test_hid_interrupt_in_roundtrip() {
+        // HID IN (interrupt, endpoint 0x81, direction IN)
+        let cmd = build_cmd_submit(0x81, 1, 64, [0u8; 8]);
+        let bytes = cmd.as_bytes();
+        let (deserialized, _rest) = UsbIpCmdSubmit::read_from_prefix(bytes).unwrap();
+        assert_eq!(deserialized.ep_num(), 0x81);
+        assert!(deserialized.is_in());
+        assert_eq!(deserialized.data_len(), 64);
+        assert!(!deserialized.is_control());
+    }
+
+    #[test]
+    fn test_bulk_out_roundtrip() {
+        // Bulk OUT (endpoint 0x02, direction OUT)
+        let cmd = build_cmd_submit(0x02, 0, 512, [0u8; 8]);
+        let bytes = cmd.as_bytes();
+        let (deserialized, _rest) = UsbIpCmdSubmit::read_from_prefix(bytes).unwrap();
+        assert_eq!(deserialized.ep_num(), 0x02);
+        assert_eq!(deserialized.dir(), 0);
+        assert_eq!(deserialized.data_len(), 512);
+        assert!(!deserialized.is_in());
+        assert!(!deserialized.is_control());
+    }
+
+    #[test]
+    fn test_control_transfer_roundtrip() {
+        // Control transfer with non-zero setup packet (GET_DESCRIPTOR request)
+        let setup: [u8; 8] = [0x80, 0x06, 0x00, 0x01, 0x00, 0x00, 0x40, 0x00];
+        let cmd = build_cmd_submit(0x00, 1, 64, setup);
+        let bytes = cmd.as_bytes();
+        let (deserialized, _rest) = UsbIpCmdSubmit::read_from_prefix(bytes).unwrap();
+        assert!(deserialized.is_control());
+        assert_eq!(deserialized.setup, setup);
+        assert_eq!(deserialized.ep_num(), 0x00);
+        assert_eq!(deserialized.data_len(), 64);
     }
 }
