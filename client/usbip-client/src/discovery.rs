@@ -53,8 +53,8 @@ impl MdnsBrowser {
                                 servers.push(sock);
                             }
                         }
-                    }
-                    _ => {}
+                    },
+                    _ => {},
                 },
                 Err(_) => break, // timeout
             }
