@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Launchd plist for AnyPlug USB/IP Server (macOS).
+
+        Install:
+            sudo cp com.anyplug.usbip-server.plist /Library/LaunchDaemons/
+            sudo launchctl load /Library/LaunchDaemons/com.anyplug.usbip-server.plist
+
+        Uninstall:
+            sudo launchctl unload /Library/LaunchDaemons/com.anyplug.usbip-server.plist
+            sudo rm /Library/LaunchDaemons/com.anyplug.usbip-server.plist
+
+        View logs:
+            sudo log show --predicate 'process == "usbip-server"' --last 1h
+            tail -f /var/log/usbip-server.log
+    -->
+
+    <key>Label</key>
+    <string>com.anyplug.usbip-server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/usbip-server</string>
+        <string>--bind</string>
+        <string>0.0.0.0</string>
+        <string>--port</string>
+        <string>3240</string>
+        <!-- Uncomment to enable encryption:
+        <string>--encrypt</string>
+        -->
+        <!-- Uncomment to allow only specific devices:
+        <string>--allow</string>
+        <string>046d:c261</string>
+        <string>--allow</string>
+        <string>8087:0024</string>
+        -->
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/usr/local/var/usbip</string>
+
+    <!-- Run as root to access raw USB devices -->
+    <key>UserName</key>
+    <string>root</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Keep alive: restart if it crashes -->
+    <key>KeepAlive</key>
+    <true/>
+
+    <!-- Throttle restarts: wait 10s before respawning -->
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <!-- Standard I/O paths -->
+    <key>StandardOutPath</key>
+    <string>/var/log/usbip-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/var/log/usbip-server.log</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RUST_LOG</key>
+        <string>info</string>
+        <key>RUST_BACKTRACE</key>
+        <string>1</string>
+    </dict>
+
+    <!--
+        macOS Hardened Runtime / SIP:
+        If you see "os/channel" errors, the binary may need the
+        com.apple.security.device.usb entitlement, or SIP should
+        be disabled for this binary.
+
+        To codesign with the entitlement:
+            codesign -f -s - --entitlement usbip.entitlements \\
+                --option runtime /usr/local/bin/usbip-server
+
+        With an usbip.entitlements file containing:
+            <?xml version="1.0" encoding="UTF-8"?>
+            <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+              "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+            <plist version="1.0">
+            <dict>
+                <key>com.apple.security.device.usb</key>
+                <true/>
+                <key>com.apple.security.cs.disable-library-validation</key>
+                <true/>
+            </dict>
+            </plist>
+    -->
+</dict>
+</plist>
