@@ -9,6 +9,10 @@ description = "USB/IP server — exports USB devices over the network"
 name = "usbip-server"
 path = "src/main.rs"
 
+[[bin]]
+name = "usbip-bench"
+path = "src/bin/benchmark.rs"
+
 [dependencies]
 usbip-core = { path = "../../shared/usbip-core" }
 zerocopy = { workspace = true }
@@ -26,3 +30,4 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 ring = { workspace = true }
 byteorder = { workspace = true }
+uuid.workspace = true

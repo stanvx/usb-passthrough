@@ -91,6 +91,8 @@ impl UrbExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use usbip_core::protocol::UsbIpHeader;
+    use usbip_core::urb::UsbIpRetSubmit;
 
     // ── helpers ──────────────────────────────────────────────────────────
 
@@ -179,7 +181,7 @@ mod tests {
                 Some(UrbExecutor::new(usb, "1-1".into()))
             },
             Err(_) => {
-                eprintln!("libusb context unavailable — skipping executor tests");
+                tracing::warn!("libusb context unavailable — skipping executor tests");
                 None
             },
         }
@@ -210,11 +212,12 @@ mod tests {
 
         let reply = ex.build_reply(&cmd, &result);
 
-        // Header (8) + RetSubmit (40) + data (64) = 112
-        assert_eq!(reply.len(), 8 + 40 + 64);
+        // Header (8) + RetSubmit + data (64)
+        let expected_len = UsbIpHeader::SIZE + UsbIpRetSubmit::HEADER_SIZE + 64;
+        assert_eq!(reply.len(), expected_len);
 
-        // Header: command (u16 BE at offset 0) should be USBIP_RET_SUBMIT (0x0003)
-        assert_eq!(be_u16(&reply, 0), USBIP_RET_SUBMIT);
+        // Header: version (u16 BE at offset 0), command (u16 BE at offset 2)
+        assert_eq!(be_u16(&reply, 2), USBIP_RET_SUBMIT, "command at offset 2");
 
         // RetSubmit: seqnum (u32 BE at offset 8) should be 1
         assert_eq!(be_u32(&reply, 8), 1);
@@ -222,11 +225,11 @@ mod tests {
         assert_eq!(be_u32(&reply, 24), 0);
         // RetSubmit: actual_length (u32 BE at offset 28) should be 64
         assert_eq!(be_u32(&reply, 28), 64);
-        // RetSubmit: error_count (u32 BE at offset 36) should be 0
-        assert_eq!(be_u32(&reply, 36), 0);
+        // RetSubmit: error_count (u32 BE at offset 40) should be 0
+        assert_eq!(be_u32(&reply, 40), 0);
 
-        // Data payload starts at offset 48
-        assert_eq!(&reply[48..], &[0xCD; 64]);
+        // Data payload starts at offset (8 + HEADER_SIZE)
+        assert_eq!(&reply[UsbIpHeader::SIZE + UsbIpRetSubmit::HEADER_SIZE..], &[0xCD; 64]);
     }
 
     #[test]
@@ -242,14 +245,15 @@ mod tests {
 
         let reply = ex.build_reply(&cmd, &result);
 
-        // Header (8) + RetSubmit (40) — no trailing data
-        assert_eq!(reply.len(), 8 + 40);
+        // Header (8) + RetSubmit — no trailing data
+        let expected_len = UsbIpHeader::SIZE + UsbIpRetSubmit::HEADER_SIZE;
+        assert_eq!(reply.len(), expected_len);
 
-        assert_eq!(be_u16(&reply, 0), USBIP_RET_SUBMIT);
+        assert_eq!(be_u16(&reply, 2), USBIP_RET_SUBMIT, "command at offset 2");
         assert_eq!(be_u32(&reply, 8), 1);
         assert_eq!(be_u32(&reply, 24), 0);
         assert_eq!(be_u32(&reply, 28), 512);
-        assert_eq!(be_u32(&reply, 36), 0);
+        assert_eq!(be_u32(&reply, 40), 0);
     }
 
     #[test]
@@ -261,15 +265,16 @@ mod tests {
 
         let reply = ex.build_reply(&cmd, &result);
 
-        assert_eq!(reply.len(), 8 + 40); // no data payload
+        let expected_len = UsbIpHeader::SIZE + UsbIpRetSubmit::HEADER_SIZE;
+        assert_eq!(reply.len(), expected_len); // no data payload
 
-        assert_eq!(be_u16(&reply, 0), USBIP_RET_SUBMIT);
+        assert_eq!(be_u16(&reply, 2), USBIP_RET_SUBMIT, "command at offset 2");
         assert_eq!(be_u32(&reply, 8), 1);
         // status = -5, stored as u32 BE with wrapping: 0xFFFFFFFB
         assert_eq!(be_u32(&reply, 24), (-5i32) as u32);
         assert_eq!(be_u32(&reply, 28), 0);
         // error_count = 1 for non-zero status
-        assert_eq!(be_u32(&reply, 36), 1);
+        assert_eq!(be_u32(&reply, 40), 1);
     }
 
     #[test]
@@ -283,11 +288,12 @@ mod tests {
 
         let reply = ex.build_reply(&cmd, &result);
 
-        assert_eq!(reply.len(), 8 + 40); // only header + RetSubmit, no data
+        let expected_len = UsbIpHeader::SIZE + UsbIpRetSubmit::HEADER_SIZE;
+        assert_eq!(reply.len(), expected_len); // only header + RetSubmit, no data
 
-        assert_eq!(be_u16(&reply, 0), USBIP_RET_SUBMIT);
+        assert_eq!(be_u16(&reply, 2), USBIP_RET_SUBMIT, "command at offset 2");
         assert_eq!(be_u32(&reply, 24), 0);
         assert_eq!(be_u32(&reply, 28), 0);
-        assert_eq!(be_u32(&reply, 36), 0);
+        assert_eq!(be_u32(&reply, 40), 0);
     }
 }

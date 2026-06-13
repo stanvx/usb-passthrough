@@ -5,6 +5,7 @@ use std::net::SocketAddr;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use usbip_client::{Client, ClientConfig};
+use usbip_core::error::UsbIpResult;
 
 #[derive(Parser)]
 #[command(name = "usbip-client")]
@@ -36,7 +37,7 @@ enum Commands {
 }
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() -> UsbIpResult<()> {
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
@@ -46,10 +47,7 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Commands::Discover => {
-            let config = ClientConfig {
-                use_mdns: true,
-                ..Default::default()
-            };
+            let config = ClientConfig { use_mdns: true, ..Default::default() };
             let client = Client::new(config)?;
             let servers = client.discover_servers()?;
 
@@ -61,14 +59,11 @@ async fn main() -> anyhow::Result<()> {
                     println!("  {}", addr);
                 }
             }
-        }
+        },
 
         Commands::List { server } => {
-            let config = ClientConfig {
-                server_addr: Some(server),
-                use_mdns: false,
-                ..Default::default()
-            };
+            let config =
+                ClientConfig { server_addr: Some(server), use_mdns: false, ..Default::default() };
             let client = Client::new(config)?;
             let devices = client.list_remote_devices(server).await?;
 
@@ -86,13 +81,9 @@ async fn main() -> anyhow::Result<()> {
                     );
                 }
             }
-        }
+        },
 
-        Commands::Connect {
-            server,
-            busid,
-            no_reconnect,
-        } => {
+        Commands::Connect { server, busid, no_reconnect } => {
             let config = ClientConfig {
                 server_addr: Some(server),
                 use_mdns: false,
@@ -114,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
             // Wait for signal
             tokio::signal::ctrl_c().await?;
             println!("\nDetaching device...");
-        }
+        },
     }
 
     Ok(())
