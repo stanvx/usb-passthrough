@@ -48,19 +48,19 @@ pub type UsbIpResult<T> = Result<T, UsbIpError>;
 pub fn rusb_to_urb_status(err: &rusb::Error) -> i32 {
     use rusb::Error;
     match err {
-        Error::Io => -5,     // -EIO
+        Error::Io => -5,            // -EIO
         Error::InvalidParam => -22, // -EINVAL
-        Error::Access => -1, // -EPERM
-        Error::NoDevice => -19, // -ENODEV
-        Error::NotFound => -2, // -ENOENT
-        Error::Busy => -16,  // -EBUSY
-        Error::Timeout => -62, // -ETIME
-        Error::Overflow => -75, // -EOVERFLOW
-        Error::Pipe => -32,  // -EPIPE
-        Error::Interrupted => -4, // -EINTR
-        Error::NoMem => -12, // -ENOMEM
+        Error::Access => -1,        // -EPERM
+        Error::NoDevice => -19,     // -ENODEV
+        Error::NotFound => -2,      // -ENOENT
+        Error::Busy => -16,         // -EBUSY
+        Error::Timeout => -62,      // -ETIME
+        Error::Overflow => -75,     // -EOVERFLOW
+        Error::Pipe => -32,         // -EPIPE
+        Error::Interrupted => -4,   // -EINTR
+        Error::NoMem => -12,        // -ENOMEM
         Error::NotSupported => -95, // -EOPNOTSUPP
-        Error::Other => -5,  // -EIO
+        Error::Other => -5,         // -EIO
         _ => -5,
     }
 }

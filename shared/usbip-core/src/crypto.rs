@@ -75,7 +75,7 @@ impl fmt::Display for CryptoError {
             Self::InvalidKeyHex => write!(f, "invalid key hex string"),
             Self::InvalidKeyLength { expected, got } => {
                 write!(f, "expected key length {expected}, got {got}")
-            }
+            },
             Self::InvalidInputLength => write!(f, "invalid input length"),
         }
     }
@@ -97,8 +97,13 @@ pub type CryptoResult<T> = Result<T, CryptoError>;
 // Curve25519 paper (https://cr.yp.to/ecdh.html).
 
 /// The prime 2²⁵⁵ − 19.
-const P: [u64; 5] = [0xffffffffffffffed, 0xffffffffffffffff,
-                     0xffffffffffffffff, 0xffffffffffffffff, 0x7fffffffffffffff];
+const P: [u64; 5] = [
+    0xffffffffffffffed,
+    0xffffffffffffffff,
+    0xffffffffffffffff,
+    0xffffffffffffffff,
+    0x7fffffffffffffff,
+];
 
 /// `a24 = 121665`, the curve constant (a − 2) / 4.
 const A24: u64 = 121665;
@@ -162,7 +167,9 @@ fn sub(a: &[u64; 5], b: &[u64; 5]) -> [u64; 5] {
         carry += (a[i] as u128).wrapping_add(P[i] as u128).wrapping_sub(b[i] as u128);
         r[i] = carry as u64;
         carry = (carry >> 64) as u128 + (carry >> 127) as u128; // sign extend
-        if carry > 0 { carry -= 1; }
+        if carry > 0 {
+            carry -= 1;
+        }
         carry = 0;
     }
     // Simpler approach: a + p - b
@@ -227,35 +234,61 @@ fn inv(a: &[u64; 5]) -> [u64; 5] {
     t4 = sqr(&t4);
     t4 = mul(&t4, &t3);
     let mut t5 = sqr(&t4);
-    for _ in 0..4 { t5 = sqr(&t5); }
+    for _ in 0..4 {
+        t5 = sqr(&t5);
+    }
     t5 = mul(&t5, &t4);
     let mut t6 = sqr(&t5);
-    for _ in 0..5 { t6 = sqr(&t6); }
+    for _ in 0..5 {
+        t6 = sqr(&t6);
+    }
     t6 = mul(&t6, &t5);
     let mut t7 = sqr(&t6);
-    for _ in 0..6 { t7 = sqr(&t7); }
+    for _ in 0..6 {
+        t7 = sqr(&t7);
+    }
     t7 = mul(&t7, &t6);
     let mut t8 = sqr(&t7);
-    for _ in 0..7 { t8 = sqr(&t8); }
+    for _ in 0..7 {
+        t8 = sqr(&t8);
+    }
     t8 = mul(&t8, &t7);
     t0 = sqr(&t8);
-    for _ in 0..8 { t0 = sqr(&t0); }
+    for _ in 0..8 {
+        t0 = sqr(&t0);
+    }
     t0 = mul(&t0, &t8);
-    for _ in 0..4 { t0 = sqr(&t0); }
+    for _ in 0..4 {
+        t0 = sqr(&t0);
+    }
     t0 = mul(&t0, &t4);
-    for _ in 0..9 { t0 = sqr(&t0); }
+    for _ in 0..9 {
+        t0 = sqr(&t0);
+    }
     t0 = mul(&t0, &t5);
-    for _ in 0..10 { t0 = sqr(&t0); }
+    for _ in 0..10 {
+        t0 = sqr(&t0);
+    }
     t0 = mul(&t0, &t6);
-    for _ in 0..5 { t0 = sqr(&t0); }
+    for _ in 0..5 {
+        t0 = sqr(&t0);
+    }
     t0 = mul(&t0, &t3);
-    for _ in 0..6 { t0 = sqr(&t0); }
+    for _ in 0..6 {
+        t0 = sqr(&t0);
+    }
     t0 = mul(&t0, &t2);
-    for _ in 0..3 { t0 = sqr(&t0); }
+    for _ in 0..3 {
+        t0 = sqr(&t0);
+    }
     t0 = mul(&t0, &t1);
-    for _ in 0..2 { t0 = sqr(&t0); }
+    for _ in 0..2 {
+        t0 = sqr(&t0);
+    }
     t0 = mul(&t0, &z);
-    for _ in 0..63 { t0 = sqr(&t0); }
+    for _ in 0..63 {
+        t0 = sqr(&t0);
+    }
     mul(&t0, &z)
 }
 
@@ -265,8 +298,14 @@ fn decode_u(bytes: &[u8; 32]) -> [u64; 5] {
     for i in 0..5 {
         let off = i * 8;
         r[i] = u64::from_le_bytes([
-            bytes[off], bytes[off+1], bytes[off+2], bytes[off+3],
-            bytes[off+4], bytes[off+5], bytes[off+6], bytes[off+7],
+            bytes[off],
+            bytes[off + 1],
+            bytes[off + 2],
+            bytes[off + 3],
+            bytes[off + 4],
+            bytes[off + 5],
+            bytes[off + 6],
+            bytes[off + 7],
         ]);
     }
     r[4] &= 0x7fffffffffffffff; // clear the high bit
@@ -279,7 +318,7 @@ fn encode_u(a: &[u64; 5]) -> [u8; 32] {
     let mut out = [0u8; 32];
     for i in 0..5 {
         let off = i * 8;
-        out[off..off+8].copy_from_slice(&a[i].to_le_bytes());
+        out[off..off + 8].copy_from_slice(&a[i].to_le_bytes());
     }
     out
 }
@@ -373,8 +412,7 @@ impl KeyPair {
     pub fn generate() -> CryptoResult<Self> {
         let rng = ring::rand::SystemRandom::new();
         let mut private = [0u8; X25519_PRIVATE_KEY_LEN];
-        rng.fill(&mut private)
-            .map_err(|_| CryptoError::KeyGeneration)?;
+        rng.fill(&mut private).map_err(|_| CryptoError::KeyGeneration)?;
 
         // Compute public key = X25519(private, basepoint)
         let basepoint = [9u8; 32];
@@ -430,11 +468,8 @@ pub fn derive_session_key(
     let prk = salt.extract(shared_secret);
 
     let mut out = [0u8; HKDF_OUTPUT_LEN];
-    let okm = prk
-        .expand(&[info], HkdfKeyType)
-        .map_err(|_| CryptoError::KeyDerivation)?;
-    okm.fill(&mut out)
-        .map_err(|_| CryptoError::KeyDerivation)?;
+    let okm = prk.expand(&[info], HkdfKeyType).map_err(|_| CryptoError::KeyDerivation)?;
+    okm.fill(&mut out).map_err(|_| CryptoError::KeyDerivation)?;
 
     Ok(out)
 }
@@ -456,11 +491,9 @@ impl hkdf::KeyType for HkdfKeyType {
 pub fn encrypt(key: &[u8; AES_256_KEY_LEN], plaintext: &[u8]) -> CryptoResult<Vec<u8>> {
     let rng = ring::rand::SystemRandom::new();
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    rng.fill(&mut nonce_bytes)
-        .map_err(|_| CryptoError::EncryptError)?;
+    rng.fill(&mut nonce_bytes).map_err(|_| CryptoError::EncryptError)?;
 
-    let unbound_key = UnboundKey::new(&AES_256_GCM, key)
-        .map_err(|_| CryptoError::EncryptError)?;
+    let unbound_key = UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::EncryptError)?;
     let key = LessSafeKey::new(unbound_key);
 
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
@@ -485,12 +518,10 @@ pub fn decrypt(key: &[u8; AES_256_KEY_LEN], ciphertext: &[u8]) -> CryptoResult<V
         return Err(CryptoError::InvalidInputLength);
     }
 
-    let nonce_bytes: [u8; NONCE_LEN] = ciphertext[..NONCE_LEN]
-        .try_into()
-        .map_err(|_| CryptoError::InvalidInputLength)?;
+    let nonce_bytes: [u8; NONCE_LEN] =
+        ciphertext[..NONCE_LEN].try_into().map_err(|_| CryptoError::InvalidInputLength)?;
 
-    let unbound_key = UnboundKey::new(&AES_256_GCM, key)
-        .map_err(|_| CryptoError::DecryptError)?;
+    let unbound_key = UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::DecryptError)?;
     let key = LessSafeKey::new(unbound_key);
 
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
@@ -513,11 +544,9 @@ pub fn encrypt_usbip_message(
 ) -> CryptoResult<Vec<u8>> {
     let rng = ring::rand::SystemRandom::new();
     let mut nonce_bytes = [0u8; NONCE_LEN];
-    rng.fill(&mut nonce_bytes)
-        .map_err(|_| CryptoError::EncryptError)?;
+    rng.fill(&mut nonce_bytes).map_err(|_| CryptoError::EncryptError)?;
 
-    let unbound_key = UnboundKey::new(&AES_256_GCM, key)
-        .map_err(|_| CryptoError::EncryptError)?;
+    let unbound_key = UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::EncryptError)?;
     let key = LessSafeKey::new(unbound_key);
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
 
@@ -543,12 +572,10 @@ pub fn decrypt_usbip_message(
         return Err(CryptoError::InvalidInputLength);
     }
 
-    let nonce_bytes: [u8; NONCE_LEN] = data[..NONCE_LEN]
-        .try_into()
-        .map_err(|_| CryptoError::InvalidInputLength)?;
+    let nonce_bytes: [u8; NONCE_LEN] =
+        data[..NONCE_LEN].try_into().map_err(|_| CryptoError::InvalidInputLength)?;
 
-    let unbound_key = UnboundKey::new(&AES_256_GCM, key)
-        .map_err(|_| CryptoError::DecryptError)?;
+    let unbound_key = UnboundKey::new(&AES_256_GCM, key).map_err(|_| CryptoError::DecryptError)?;
     let key = LessSafeKey::new(unbound_key);
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
 
@@ -720,20 +747,19 @@ mod tests {
     #[test]
     fn test_x25519_test_vector() {
         // RFC 7748 Section 6.1
-        let scalar = hex_decode(
-            "a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4"
-        ).unwrap();
-        let u_coord = hex_decode(
-            "e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c"
-        ).unwrap();
+        let scalar =
+            hex_decode("a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4").unwrap();
+        let u_coord =
+            hex_decode("e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c").unwrap();
 
-        let mut s = [0u8; 32]; s.copy_from_slice(&scalar);
-        let mut u = [0u8; 32]; u.copy_from_slice(&u_coord);
+        let mut s = [0u8; 32];
+        s.copy_from_slice(&scalar);
+        let mut u = [0u8; 32];
+        u.copy_from_slice(&u_coord);
         let result = x25519(&s, &u);
 
-        let expected = hex_decode(
-            "c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552"
-        ).unwrap();
+        let expected =
+            hex_decode("c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552").unwrap();
 
         assert_eq!(result.as_slice(), expected.as_slice());
     }

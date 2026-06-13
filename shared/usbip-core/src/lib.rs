@@ -12,17 +12,17 @@
 //! header fields use `U16BE` / `U32BE` / `I32BE`, while USB descriptor
 //! payloads use native `u16` / `u32` (which is LE on all our targets).
 
-pub mod protocol;
-pub mod urb;
+pub mod crypto;
 pub mod descriptor;
 pub mod error;
-pub mod crypto;
+pub mod protocol;
+pub mod urb;
 
-pub use protocol::*;
-pub use urb::*;
+pub use crypto::*;
 pub use descriptor::*;
 pub use error::*;
-pub use crypto::*;
+pub use protocol::*;
+pub use urb::*;
 
 /// Default USB/IP TCP port (IANA-registered).
 pub const USBIP_PORT: u16 = 3240;

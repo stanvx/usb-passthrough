@@ -1,6 +1,6 @@
 //! USB Request Block (URB) types — the core data-transfer primitives.
 
-use zerocopy::byteorder::{U32, BigEndian};
+use zerocopy::byteorder::{BigEndian, U32};
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 pub type U32BE = U32<BigEndian>;
@@ -11,29 +11,43 @@ pub type U32BE = U32<BigEndian>;
 #[derive(Debug, Clone, AsBytes, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 pub struct UsbIpCmdSubmit {
-    pub seqnum:                 U32BE,
-    pub devid:                  U32BE,
-    pub direction:              U32BE,
-    pub ep:                     U32BE,
-    pub transfer_flags:         U32BE,
+    pub seqnum: U32BE,
+    pub devid: U32BE,
+    pub direction: U32BE,
+    pub ep: U32BE,
+    pub transfer_flags: U32BE,
     pub transfer_buffer_length: U32BE,
-    pub start_frame:            U32BE,
-    pub number_of_packets:      U32BE,
-    pub interval:               U32BE,
-    pub setup:                  [u8; 8],
+    pub start_frame: U32BE,
+    pub number_of_packets: U32BE,
+    pub interval: U32BE,
+    pub setup: [u8; 8],
     // Variable-length data follows for OUT transfers
 }
 
 impl UsbIpCmdSubmit {
     pub const HEADER_SIZE: usize = 48; // 12 * 4 bytes
 
-    pub fn seqnum(&self) -> u32 { self.seqnum.get() }
-    pub fn devid(&self) -> u32 { self.devid.get() }
-    pub fn dir(&self) -> u32 { self.direction.get() }
-    pub fn ep_num(&self) -> u32 { self.ep.get() }
-    pub fn flags(&self) -> u32 { self.transfer_flags.get() }
-    pub fn data_len(&self) -> u32 { self.transfer_buffer_length.get() }
-    pub fn interval_val(&self) -> u32 { self.interval.get() }
+    pub fn seqnum(&self) -> u32 {
+        self.seqnum.get()
+    }
+    pub fn devid(&self) -> u32 {
+        self.devid.get()
+    }
+    pub fn dir(&self) -> u32 {
+        self.direction.get()
+    }
+    pub fn ep_num(&self) -> u32 {
+        self.ep.get()
+    }
+    pub fn flags(&self) -> u32 {
+        self.transfer_flags.get()
+    }
+    pub fn data_len(&self) -> u32 {
+        self.transfer_buffer_length.get()
+    }
+    pub fn interval_val(&self) -> u32 {
+        self.interval.get()
+    }
 
     /// Returns true if this is an IN (device→host) transfer.
     pub fn is_in(&self) -> bool {
@@ -60,27 +74,37 @@ impl UsbIpCmdSubmit {
 #[derive(Debug, Clone, AsBytes, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 pub struct UsbIpRetSubmit {
-    pub seqnum:            U32BE,
-    pub devid:             U32BE,
-    pub direction:         U32BE,
-    pub ep:                U32BE,
-    pub status:            U32BE,
-    pub actual_length:     U32BE,
-    pub start_frame:       U32BE,
+    pub seqnum: U32BE,
+    pub devid: U32BE,
+    pub direction: U32BE,
+    pub ep: U32BE,
+    pub status: U32BE,
+    pub actual_length: U32BE,
+    pub start_frame: U32BE,
     pub number_of_packets: U32BE,
-    pub error_count:       U32BE,
-    pub setup:             [u8; 8],
+    pub error_count: U32BE,
+    pub setup: [u8; 8],
     // Variable-length data follows for IN transfers
 }
 
 impl UsbIpRetSubmit {
     pub const HEADER_SIZE: usize = 40;
 
-    pub fn seqnum(&self) -> u32 { self.seqnum.get() }
-    pub fn devid(&self) -> u32 { self.devid.get() }
-    pub fn status_val(&self) -> u32 { self.status.get() }
-    pub fn actual_len(&self) -> u32 { self.actual_length.get() }
-    pub fn dir(&self) -> u32 { self.direction.get() }
+    pub fn seqnum(&self) -> u32 {
+        self.seqnum.get()
+    }
+    pub fn devid(&self) -> u32 {
+        self.devid.get()
+    }
+    pub fn status_val(&self) -> u32 {
+        self.status.get()
+    }
+    pub fn actual_len(&self) -> u32 {
+        self.actual_length.get()
+    }
+    pub fn dir(&self) -> u32 {
+        self.direction.get()
+    }
 
     pub fn is_success(&self) -> bool {
         self.status.get() == 0
@@ -109,16 +133,22 @@ impl UsbIpRetSubmit {
 #[repr(C, packed)]
 pub struct UsbIpRetUnlink {
     pub seqnum: U32BE,
-    pub devid:  U32BE,
+    pub devid: U32BE,
     pub status: U32BE,
 }
 
 impl UsbIpRetUnlink {
     pub const SIZE: usize = 12;
 
-    pub fn seqnum(&self) -> u32 { self.seqnum.get() }
-    pub fn devid(&self) -> u32 { self.devid.get() }
-    pub fn status_val(&self) -> u32 { self.status.get() }
+    pub fn seqnum(&self) -> u32 {
+        self.seqnum.get()
+    }
+    pub fn devid(&self) -> u32 {
+        self.devid.get()
+    }
+    pub fn status_val(&self) -> u32 {
+        self.status.get()
+    }
 }
 
 // ─── Convenience Types (not wire-format) ────────────────────────
@@ -172,14 +202,9 @@ pub struct UrbBuffer {
 
 impl UrbBuffer {
     pub fn new(data_capacity: usize) -> Self {
-        let header_size = UsbIpCmdSubmit::HEADER_SIZE
-            + super::protocol::UsbIpHeader::SIZE;
+        let header_size = UsbIpCmdSubmit::HEADER_SIZE + super::protocol::UsbIpHeader::SIZE;
         let total = header_size + data_capacity;
-        Self {
-            buf: vec![0u8; total],
-            data_offset: header_size,
-            data_capacity,
-        }
+        Self { buf: vec![0u8; total], data_offset: header_size, data_capacity }
     }
 
     pub fn reset(&mut self) {

@@ -256,29 +256,27 @@ impl UsbDeviceInfo {
                             let sub_type = raw[inner_offset + 1];
                             match sub_type {
                                 0x05 => {
-                                    if let Some(ep) = EndpointDescriptor::parse(&raw[inner_offset..]) {
+                                    if let Some(ep) =
+                                        EndpointDescriptor::parse(&raw[inner_offset..])
+                                    {
                                         inner_offset += EndpointDescriptor::SIZE;
                                         endpoints.push(ep);
                                         continue;
                                     }
-                                }
+                                },
                                 0x21 => {
                                     if let Some(h) = HidDescriptor::parse(&raw[inner_offset..]) {
                                         inner_offset += HidDescriptor::SIZE;
                                         hid = Some(h);
                                         continue;
                                     }
-                                }
-                                _ => {}
+                                },
+                                _ => {},
                             }
                             break;
                         }
 
-                        interfaces.push(InterfaceInfo {
-                            interface: iface,
-                            endpoints,
-                            hid,
-                        });
+                        interfaces.push(InterfaceInfo { interface: iface, endpoints, hid });
 
                         if inner_offset >= config_end {
                             break;
@@ -287,14 +285,14 @@ impl UsbDeviceInfo {
 
                     configs.push(ConfigInfo { config, interfaces });
                     offset = config_end;
-                }
+                },
                 _ => {
                     // Skip unknown descriptors
                     if desc_len == 0 || offset + desc_len > raw.len() {
                         break;
                     }
                     offset += desc_len;
-                }
+                },
             }
         }
 

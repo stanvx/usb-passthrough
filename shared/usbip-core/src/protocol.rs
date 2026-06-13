@@ -1,6 +1,6 @@
 //! USB/IP wire protocol constants, header types, and message construction.
 
-use zerocopy::byteorder::{U16, U32, I32, BigEndian};
+use zerocopy::byteorder::{BigEndian, I32, U16, U32};
 use zerocopy::{AsBytes, FromBytes, FromZeroes};
 
 /// Re-export big-endian types for convenience.
@@ -34,11 +34,11 @@ pub const USBIP_RET_SUBMIT: u16 = 0x0003;
 // ─── Status Codes ────────────────────────────────────────────────
 
 pub const STATUS_SUCCESS: i32 = 0;
-pub const STATUS_ST_NA: i32 = 1;       // device not available
+pub const STATUS_ST_NA: i32 = 1; // device not available
 pub const STATUS_ST_DEV_BUSY: i32 = 2; // device already exported
-pub const STATUS_ST_DEV_ERR: i32 = 3;  // device error
-pub const STATUS_ST_NODEV: i32 = 4;    // no such device
-pub const STATUS_ST_ERROR: i32 = 5;    // generic error
+pub const STATUS_ST_DEV_ERR: i32 = 3; // device error
+pub const STATUS_ST_NODEV: i32 = 4; // no such device
+pub const STATUS_ST_ERROR: i32 = 5; // generic error
 
 // ─── URB Transfer Flags ──────────────────────────────────────────
 
@@ -59,7 +59,7 @@ pub const URB_DIR_OUT: u32 = 0;
 pub struct UsbIpHeader {
     pub version: U16BE,
     pub command: U16BE,
-    pub status:  I32BE,
+    pub status: I32BE,
 }
 
 impl UsbIpHeader {
@@ -69,7 +69,7 @@ impl UsbIpHeader {
         Self {
             version: U16BE::new(crate::USBIP_VERSION),
             command: U16BE::new(command),
-            status:  I32BE::new(0),
+            status: I32BE::new(0),
         }
     }
 
@@ -77,7 +77,7 @@ impl UsbIpHeader {
         Self {
             version: U16BE::new(crate::USBIP_VERSION),
             command: U16BE::new(command),
-            status:  I32BE::new(status),
+            status: I32BE::new(status),
         }
     }
 }
@@ -86,20 +86,20 @@ impl UsbIpHeader {
 #[derive(Debug, Clone, AsBytes, FromBytes, FromZeroes)]
 #[repr(C, packed)]
 pub struct UsbIpDeviceEntry {
-    pub path:                [u8; 256],
-    pub busid:               [u8; 32],
-    pub busnum:              U32BE,
-    pub devnum:              U32BE,
-    pub speed:               U32BE,
-    pub id_vendor:           U16BE,
-    pub id_product:          U16BE,
-    pub bcd_device:          U16BE,
-    pub b_device_class:      u8,
-    pub b_device_sub_class:  u8,
-    pub b_device_protocol:   u8,
+    pub path: [u8; 256],
+    pub busid: [u8; 32],
+    pub busnum: U32BE,
+    pub devnum: U32BE,
+    pub speed: U32BE,
+    pub id_vendor: U16BE,
+    pub id_product: U16BE,
+    pub bcd_device: U16BE,
+    pub b_device_class: u8,
+    pub b_device_sub_class: u8,
+    pub b_device_protocol: u8,
     pub b_configuration_value: u8,
-    pub b_num_configurations:  u8,
-    pub b_num_interfaces:    u8,
+    pub b_num_configurations: u8,
+    pub b_num_interfaces: u8,
 }
 
 impl UsbIpDeviceEntry {
@@ -117,9 +117,15 @@ impl UsbIpDeviceEntry {
         core::str::from_utf8(&self.path[..end]).unwrap_or("???")
     }
 
-    pub fn vid(&self) -> u16 { self.id_vendor.get() }
-    pub fn pid(&self) -> u16 { self.id_product.get() }
-    pub fn speed_val(&self) -> u32 { self.speed.get() }
+    pub fn vid(&self) -> u16 {
+        self.id_vendor.get()
+    }
+    pub fn pid(&self) -> u16 {
+        self.id_product.get()
+    }
+    pub fn speed_val(&self) -> u32 {
+        self.speed.get()
+    }
 }
 
 /// The variable-length portion of OP_REP_IMPORT: device entry + descriptor tree.
