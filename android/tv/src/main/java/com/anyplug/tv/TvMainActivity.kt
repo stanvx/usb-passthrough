@@ -4,30 +4,27 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
+import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.focusable
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import com.anyplug.AnyPlugService
 import com.anyplug.bridge.RustBridge
+import com.anyplug.tv.ui.TvLeanbackScreen
+import com.anyplug.ui.DiscoveredServer
+import com.anyplug.ui.LocalUsbDevice
 
 /**
- * Android TV Main Activity — Leanback-style UI for D-pad navigation.
+ * Android TV launcher activity with Leanback-optimized UI.
  *
- * Designed for the 10-foot experience:
- *  - Large text and touch targets
- *  - Horizontal card scrolling
- *  - D-pad navigation (no touch required)
- *  - Simplified: connect-only mode (TV typically acts as client)
+ * Uses Compose with large touch targets and D-pad navigation
+ * improvements for TV remote control operation.
  */
 class TvMainActivity : ComponentActivity() {
 
@@ -47,89 +44,72 @@ class TvMainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize Rust JNI bridge
         RustBridge.init()
 
-        bindService(
-            Intent(this, AnyPlugService::class.java),
-            serviceConnection,
-            Context.BIND_AUTO_CREATE
-        )
+        // Bind to service
+        val intent = Intent(this, AnyPlugService::class.java)
+        bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         setContent {
             MaterialTheme {
-                TvScreen()
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    var isRunning by remember { mutableStateOf(false) }
+                    var modeText by remember { mutableStateOf("") }
+
+                    val localDevices = remember { getAttachedUsbDevices() }
+                    val discoveredServers = remember { emptyList<DiscoveredServer>() }
+
+                    TvLeanbackScreen(
+                        onStartServer = { deviceName ->
+                            val device = localDevices.find { it.name == deviceName }
+                            if (device != null) {
+                                service?.startServer(deviceName, device.vid, device.pid)
+                                isRunning = true
+                                modeText = "Server — sharing $deviceName"
+                            }
+                        },
+                        onConnectToServer = { host, busId ->
+                            val parts = host.split(":")
+                            val h = parts[0]
+                            val p = if (parts.size > 1) parts[1].toIntOrNull() ?: 3240 else 3240
+                            service?.startClient(h, p, busId)
+                            isRunning = true
+                            modeText = "Client — connected to $host"
+                        },
+                        discoveredServers = discoveredServers,
+                        localDevices = localDevices,
+                        isServiceRunning = isRunning,
+                        serviceModeText = modeText
+                    )
+                }
             }
         }
     }
 
     override fun onDestroy() {
-        if (serviceBound) unbindService(serviceConnection)
+        if (serviceBound) {
+            unbindService(serviceConnection)
+            serviceBound = false
+        }
         super.onDestroy()
     }
-}
 
-@Composable
-fun TvScreen() {
-    var connected by remember { mutableStateOf(false) }
-    var deviceName by remember { mutableStateOf("") }
-    val focusRequester = remember { FocusRequester() }
-
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background
-    ) {
-        Column(
-            modifier = Modifier.padding(48.dp),
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "AnyPlug",
-                style = MaterialTheme.typography.headlineLarge,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(bottom = 32.dp)
+    /**
+     * Enumerate currently attached USB devices.
+     */
+    private fun getAttachedUsbDevices(): List<LocalUsbDevice> {
+        val usbManager = getSystemService(USB_SERVICE) as UsbManager
+        return usbManager.deviceList.map { (_, device) ->
+            LocalUsbDevice(
+                name = device.productName ?: "USB Device ${device.deviceId}",
+                vid = device.vendorId,
+                pid = device.productId
             )
-
-            if (!connected) {
-                Text(
-                    text = "Discovering USB/IP servers on your network...",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 24.dp)
-                )
-
-                // D-pad navigable server list
-                listOf("Living Room PC", "Office PC", "Raspberry Pi").forEach { server ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                            .focusRequester(focusRequester)
-                            .focusable()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(24.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Column {
-                                Text(
-                                    text = server,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    text = "Devices: Logitech G920, Webcam",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                        }
-                    }
-                }
-            } else {
-                Text(
-                    text = "Connected: $deviceName",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
         }
     }
 }
