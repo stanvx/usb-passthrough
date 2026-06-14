@@ -36,9 +36,13 @@ class AnyPlugTvInputService : TvInputService() {
         private var surfaceView: SurfaceView? = null
         private var currentSurface: Surface? = null
 
-        override fun onCreate(overlayView: SurfaceView?) {
-            surfaceView = overlayView
-            overlayView?.holder?.addCallback(object : SurfaceHolder.Callback {
+        override fun onSetCaptionEnabled(enabled: Boolean) {
+            // TODO: handle caption state changes when video pipeline is active
+        }
+
+        private fun attachSurface(surfaceView: SurfaceView?) {
+            this.surfaceView = surfaceView
+            surfaceView?.holder?.addCallback(object : SurfaceHolder.Callback {
                 override fun surfaceCreated(holder: SurfaceHolder) {
                     currentSurface = holder.surface
                 }

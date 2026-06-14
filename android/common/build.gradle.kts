@@ -43,8 +43,10 @@ dependencies {
     // Coroutines (shared by client, server, service)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
-    // Lifecycle service (AnyPlugService extends LifecycleService)
-    implementation("androidx.lifecycle:lifecycle-service:2.6.2")
+    // Lifecycle service (AnyPlugService extends LifecycleService).
+    // Must be api, not implementation — consuming modules (app, tv)
+    // reference AnyPlugService directly and need to resolve its supertype.
+    api("androidx.lifecycle:lifecycle-service:2.6.2")
     implementation("androidx.core:core:1.12.0")
 
     // mDNS fallback
