@@ -17,12 +17,13 @@ import kotlinx.coroutines.*
  * (importing a remote USB device). The service holds a wake lock
  * to prevent the CPU from sleeping during active transfers.
  */
-class AnyPlugService : LifecycleService() {
+class AnyPlugService : LifecycleService(), WakeLockManager {
 
     private val binder = LocalBinder()
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var wakeLock: PowerManager.WakeLock? = null
+    private var transferWakeLock: PowerManager.WakeLock? = null
     private var serverRunner: UsbIpServer? = null
     private var clientRunner: UsbIpClient? = null
 
@@ -49,6 +50,13 @@ class AnyPlugService : LifecycleService() {
             "anyplug:wakelock"
         )
         wakeLock?.setReferenceCounted(false)
+
+        // Transfer wake lock — finer granularity, acquired per-URB
+        transferWakeLock = pm.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK,
+            "anyplug:transferwake"
+        )
+        transferWakeLock?.setReferenceCounted(true)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -77,6 +85,7 @@ class AnyPlugService : LifecycleService() {
     override fun onDestroy() {
         serviceScope.cancel()
         wakeLock?.release()
+        transferWakeLock?.release()
         serverRunner?.stop()
         clientRunner?.stop()
         super.onDestroy()
@@ -93,7 +102,8 @@ class AnyPlugService : LifecycleService() {
 
         serverRunner = UsbIpServer(
             context = this,
-            deviceFilter = UsbDeviceFilter(vid, pid)
+            deviceFilter = UsbDeviceFilter(vid, pid),
+            wakeLockManager = this
         )
         serviceScope.launch {
             serverRunner?.start()
@@ -110,7 +120,8 @@ class AnyPlugService : LifecycleService() {
         clientRunner = UsbIpClient(
             serverHost = serverHost,
             serverPort = serverPort,
-            busId = busId
+            busId = busId,
+            wakeLockManager = this
         )
         serviceScope.launch {
             clientRunner?.start()
@@ -125,6 +136,30 @@ class AnyPlugService : LifecycleService() {
         serverRunner?.stop()
         clientRunner?.stop()
         wakeLock?.release()
+        transferWakeLock?.release()
         stopSelf()
+    }
+
+    /**
+     * Acquire the transfer wake lock before a URB operation.
+     * Reference-counted — pair each acquire with a release.
+     */
+    fun acquireTransferWakeLock() {
+        transferWakeLock?.acquire()
+    }
+
+    /**
+     * Release the transfer wake lock after a URB operation completes.
+     */
+    fun releaseTransferWakeLock() {
+        transferWakeLock?.release()
+    }
+
+    /**
+     * Check whether the transfer wake lock is currently held.
+     * Used for testing and diagnostics.
+     */
+    fun isTransferWakeLockHeld(): Boolean {
+        return transferWakeLock?.isHeld == true
     }
 }

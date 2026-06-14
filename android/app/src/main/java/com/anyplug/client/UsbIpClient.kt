@@ -1,6 +1,7 @@
 package com.anyplug.client
 
 import kotlinx.coroutines.*
+import com.anyplug.WakeLockManager
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
@@ -19,7 +20,8 @@ import java.nio.ByteOrder
 class UsbIpClient(
     private val serverHost: String,
     private val serverPort: Int = 3240,
-    private val busId: String
+    private val busId: String,
+    private val wakeLockManager: WakeLockManager? = null
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var socket: Socket? = null
@@ -99,61 +101,69 @@ class UsbIpClient(
 
         seqnum++
 
-        // Build CMD_SUBMIT
-        val cmdBuf = ByteBuffer.allocate(8 + 48 + data.size).order(ByteOrder.BIG_ENDIAN)
+        // Acquire transfer wake lock before URB submission
+        wakeLockManager?.acquireTransferWakeLock()
 
-        // USB/IP header
-        cmdBuf.putShort(USBIP_VERSION.toShort())
-        cmdBuf.putShort(USBIP_CMD_SUBMIT.toShort())
-        cmdBuf.putInt(0)
+        try {
+            // Build CMD_SUBMIT
+            val cmdBuf = ByteBuffer.allocate(8 + 48 + data.size).order(ByteOrder.BIG_ENDIAN)
 
-        // CMD_SUBMIT struct
-        cmdBuf.putInt(seqnum)
-        cmdBuf.putInt(devid)
-        cmdBuf.putInt(direction)
-        cmdBuf.putInt(ep)
-        cmdBuf.putInt(flags)
-        cmdBuf.putInt(dataLen)
-        cmdBuf.putInt(0) // start_frame
-        cmdBuf.putInt(0) // number_of_packets
-        cmdBuf.putInt(0) // interval
-        cmdBuf.put(setup)
+            // USB/IP header
+            cmdBuf.putShort(USBIP_VERSION.toShort())
+            cmdBuf.putShort(USBIP_CMD_SUBMIT.toShort())
+            cmdBuf.putInt(0)
 
-        // OUT data
-        if (direction == 0 && data.isNotEmpty()) {
-            cmdBuf.put(data)
+            // CMD_SUBMIT struct
+            cmdBuf.putInt(seqnum)
+            cmdBuf.putInt(devid)
+            cmdBuf.putInt(direction)
+            cmdBuf.putInt(ep)
+            cmdBuf.putInt(flags)
+            cmdBuf.putInt(dataLen)
+            cmdBuf.putInt(0) // start_frame
+            cmdBuf.putInt(0) // number_of_packets
+            cmdBuf.putInt(0) // interval
+            cmdBuf.put(setup)
+
+            // OUT data
+            if (direction == 0 && data.isNotEmpty()) {
+                cmdBuf.put(data)
+            }
+
+            withContext(Dispatchers.IO) {
+                output.write(cmdBuf.array())
+                output.flush()
+            }
+
+            // Read RET_SUBMIT
+            val retHeader = ByteArray(8)
+            val retStruct = ByteArray(40)
+
+            withContext(Dispatchers.IO) {
+                input.read(retHeader)
+                input.read(retStruct)
+            }
+
+            val ret = ByteBuffer.wrap(retStruct).order(ByteOrder.BIG_ENDIAN)
+            val retSeqnum = ret.getInt(0)
+            val retDevid = ret.getInt(4)
+            val retStatus = ret.getInt(16)
+            val retActualLen = ret.getInt(20)
+
+            // Read IN data if present
+            val inData = if (direction == 1 && retStatus == 0 && retActualLen > 0) {
+                val buf = ByteArray(retActualLen)
+                withContext(Dispatchers.IO) { input.read(buf) }
+                buf
+            } else {
+                ByteArray(0)
+            }
+
+            return UrbResult(retStatus, retActualLen, inData)
+        } finally {
+            // Release transfer wake lock after URB completes
+            wakeLockManager?.releaseTransferWakeLock()
         }
-
-        withContext(Dispatchers.IO) {
-            output.write(cmdBuf.array())
-            output.flush()
-        }
-
-        // Read RET_SUBMIT
-        val retHeader = ByteArray(8)
-        val retStruct = ByteArray(40)
-
-        withContext(Dispatchers.IO) {
-            input.read(retHeader)
-            input.read(retStruct)
-        }
-
-        val ret = ByteBuffer.wrap(retStruct).order(ByteOrder.BIG_ENDIAN)
-        val retSeqnum = ret.getInt(0)
-        val retDevid = ret.getInt(4)
-        val retStatus = ret.getInt(16)
-        val retActualLen = ret.getInt(20)
-
-        // Read IN data if present
-        val inData = if (direction == 1 && retStatus == 0 && retActualLen > 0) {
-            val buf = ByteArray(retActualLen)
-            withContext(Dispatchers.IO) { input.read(buf) }
-            buf
-        } else {
-            ByteArray(0)
-        }
-
-        return UrbResult(retStatus, retActualLen, inData)
     }
 
     // ─── Private ─────────────────────────────────────────────

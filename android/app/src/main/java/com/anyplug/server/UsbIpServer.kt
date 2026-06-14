@@ -2,8 +2,8 @@ package com.anyplug.server
 
 import android.content.Context
 import android.hardware.usb.*
-import android.os.Build
 import kotlinx.coroutines.*
+import com.anyplug.WakeLockManager
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.ServerSocket
@@ -23,6 +23,7 @@ import java.nio.ByteOrder
 class UsbIpServer(
     private val context: Context,
     private val deviceFilter: UsbDeviceFilter,
+    private val wakeLockManager: WakeLockManager? = null,
     private val port: Int = DEFAULT_PORT
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -198,42 +199,50 @@ class UsbIpServer(
 
             if (command != USBIP_CMD_SUBMIT) break
 
-            // Read CMD_SUBMIT header (48 bytes)
-            val cmdBuf = ByteArray(48)
-            if (!readExact(input, cmdBuf)) break
+            // Acquire transfer wake lock before reading URB data
+            wakeLockManager?.acquireTransferWakeLock()
 
-            val cmd = ByteBuffer.wrap(cmdBuf).order(ByteOrder.BIG_ENDIAN)
-            val seqnum = cmd.getInt(0)
-            val devid = cmd.getInt(4)
-            val direction = cmd.getInt(8)
-            val ep = cmd.getInt(12)
-            val flags = cmd.getInt(16)
-            val dataLen = cmd.getInt(20)
-            val setup = ByteArray(8)
-            cmd.position(40)
-            cmd.get(setup)
-
-            // Read data for OUT transfers
-            val outData = ByteArray(dataLen)
-            if (direction == 0 && dataLen > 0) { // OUT
-                if (!readExact(input, outData)) break
-            }
-
-            // Execute URB on real device
             try {
-                val (status, actualLen, inData) = executeUrb(
-                    conn, device, ep, direction, flags, dataLen, setup, outData
-                )
+                // Read CMD_SUBMIT header (48 bytes)
+                val cmdBuf = ByteArray(48)
+                if (!readExact(input, cmdBuf)) break
 
-                // Send RET_SUBMIT
-                val retBuf = buildRetSubmit(seqnum, devid, ep, direction, status, actualLen, setup, inData)
-                output.write(retBuf)
-                output.flush()
-            } catch (e: Exception) {
-                // Send error RET_SUBMIT
-                val retBuf = buildRetSubmit(seqnum, devid, ep, direction, -5 /* -EIO */, 0, setup, ByteArray(0))
-                output.write(retBuf)
-                output.flush()
+                val cmd = ByteBuffer.wrap(cmdBuf).order(ByteOrder.BIG_ENDIAN)
+                val seqnum = cmd.getInt(0)
+                val devid = cmd.getInt(4)
+                val direction = cmd.getInt(8)
+                val ep = cmd.getInt(12)
+                val flags = cmd.getInt(16)
+                val dataLen = cmd.getInt(20)
+                val setup = ByteArray(8)
+                cmd.position(40)
+                cmd.get(setup)
+
+                // Read data for OUT transfers
+                val outData = ByteArray(dataLen)
+                if (direction == 0 && dataLen > 0) { // OUT
+                    if (!readExact(input, outData)) break
+                }
+
+                // Execute URB on real device
+                try {
+                    val (status, actualLen, inData) = executeUrb(
+                        conn, device, ep, direction, flags, dataLen, setup, outData
+                    )
+
+                    // Send RET_SUBMIT
+                    val retBuf = buildRetSubmit(seqnum, devid, ep, direction, status, actualLen, setup, inData)
+                    output.write(retBuf)
+                    output.flush()
+                } catch (e: Exception) {
+                    // Send error RET_SUBMIT
+                    val retBuf = buildRetSubmit(seqnum, devid, ep, direction, -5 /* -EIO */, 0, setup, ByteArray(0))
+                    output.write(retBuf)
+                    output.flush()
+                }
+            } finally {
+                // Release transfer wake lock after URB completes
+                wakeLockManager?.releaseTransferWakeLock()
             }
         }
     }
