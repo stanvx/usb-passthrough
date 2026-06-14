@@ -8,6 +8,9 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
+import com.anyplug.client.UsbIpClient
+import com.anyplug.server.UsbDeviceFilter
+import com.anyplug.server.UsbIpServer
 import kotlinx.coroutines.*
 
 /**
@@ -139,19 +142,19 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
         transferWakeLock?.release()
         stopSelf()
     }
-
     /**
-     * Acquire the transfer wake lock before a URB operation.
+     * Acquire a reference-counted wake lock for an individual URB transfer.
+     *
      * Reference-counted — pair each acquire with a release.
      */
-    fun acquireTransferWakeLock() {
+    override fun acquireTransferWakeLock() {
         transferWakeLock?.acquire()
     }
 
     /**
      * Release the transfer wake lock after a URB operation completes.
      */
-    fun releaseTransferWakeLock() {
+    override fun releaseTransferWakeLock() {
         transferWakeLock?.release()
     }
 

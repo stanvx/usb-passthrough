@@ -37,6 +37,14 @@ class UsbIpServer(
     companion object {
         const val DEFAULT_PORT = 3240
         const val USBIP_VERSION = 0x0111
+        // Protocol commands
+        const val OP_REQ_DEVLIST  = 0x8003
+        const val OP_REP_DEVLIST  = 0x0005
+        const val OP_REQ_IMPORT   = 0x8006
+        const val OP_REP_IMPORT   = 0x0007
+        const val USBIP_CMD_SUBMIT = 0x0001
+        const val USBIP_RET_SUBMIT = 0x0003
+        const val USBIP_RET_UNLINK = 0x0002
     }
 
     suspend fun start() {
@@ -330,9 +338,9 @@ class UsbIpServer(
         entry.putShort(device.vendorId.toShort())
         entry.putShort(device.productId.toShort())
         entry.putShort(0) // bcdDevice
-        entry.put(device.deviceClass)
-        entry.put(device.deviceSubclass)
-        entry.put(device.deviceProtocol)
+        entry.put(device.deviceClass.toByte())
+        entry.put(device.deviceSubclass.toByte())
+        entry.put(device.deviceProtocol.toByte())
         entry.put(0) // bConfigurationValue
         entry.put(device.configurationCount.toByte())
         entry.put(0) // bNumInterfaces (filled below)
@@ -353,12 +361,12 @@ class UsbIpServer(
         val buf = ByteBuffer.wrap(tree).order(ByteOrder.LITTLE_ENDIAN)
 
         // Device descriptor (18 bytes)
-        buf.put(18) // bLength
+        buf.put(18.toByte()) // bLength
         buf.put(1)  // bDescriptorType
         buf.putShort(0x0200) // bcdUSB 2.0
-        buf.put(device.deviceClass)
-        buf.put(device.deviceSubclass)
-        buf.put(device.deviceProtocol)
+        buf.put(device.deviceClass.toByte())
+        buf.put(device.deviceSubclass.toByte())
+        buf.put(device.deviceProtocol.toByte())
         buf.put(64) // bMaxPacketSize0
         buf.putShort(device.vendorId.toShort())
         buf.putShort(device.productId.toShort())
@@ -416,17 +424,5 @@ class UsbIpServer(
             offset += n
         }
         return true
-    }
-
-    // ─── Protocol Constants ──────────────────────────────────
-
-    companion object Prot {
-        const val OP_REQ_DEVLIST  = 0x8003
-        const val OP_REP_DEVLIST  = 0x0005
-        const val OP_REQ_IMPORT   = 0x8006
-        const val OP_REP_IMPORT   = 0x0007
-        const val USBIP_CMD_SUBMIT = 0x0001
-        const val USBIP_RET_SUBMIT = 0x0003
-        const val USBIP_RET_UNLINK = 0x0002
     }
 }
