@@ -163,7 +163,7 @@ jobs:
     needs:
       - linux-x86_64
       - windows
-    if: always()
+      - android
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
