@@ -1,10 +1,15 @@
-# ─── Release: Tag-based build & publish ────────────────────
+# ─── Release: Tag-based multi-platform build & publish ─────────────
 # Triggers on tags matching v* (e.g. v0.1.0, v1.2.3-beta).
 # Produces:
-#   • Windows EXE   – built on windows-latest with MSVC toolchain
-#   • Android APK   – built on ubuntu-latest with Android SDK
-# Both artifacts are uploaded to a GitHub Release.
-# ────────────────────────────────────────────────────────────────
+#   • Linux x86_64   – native binary
+#   • Linux ARM64    – cross-compiled binary
+#   • Linux ARMv7    – cross-compiled binary
+#   • Windows EXE    – built on windows-latest with MSVC toolchain
+#   • Android APK    – phone release build
+#   • Android TV APK – TV release build
+# Auto-generates changelog from conventional commits since previous tag.
+# All artifacts uploaded to a single GitHub Release.
+# ────────────────────────────────────────────────────────────────────
 
 name: Release
 
@@ -20,9 +25,117 @@ permissions:
   contents: write
 
 jobs:
-  # ── Windows: build EXE with MSVC ─────────────────────────
+  # ── Linux x86_64 ──────────────────────────────────────────────
+  linux-x86_64:
+    name: Linux (x86_64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libusb-1.0-0-dev
+
+      - name: Build release binaries
+        run: cargo build --release --workspace
+
+      - name: Collect binaries
+        run: |
+          mkdir -p artifacts
+          cp target/release/usbip-server artifacts/
+          cp target/release/usbip-client artifacts/
+          ls -lh artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: anyplug-linux-x86_64
+          path: artifacts/*
+          if-no-files-found: error
+
+  # ── Linux ARM64 ───────────────────────────────────────────────
+  linux-arm64:
+    name: Linux (ARM64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (ARM64 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install cross-compilation dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            gcc-aarch64-linux-gnu \
+            libusb-1.0-0-dev:arm64
+
+      - name: Build release binaries
+        run: |
+          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+          cargo build --release --target aarch64-unknown-linux-gnu \
+            -p usbip-server -p usbip-client
+
+      - name: Collect binaries
+        run: |
+          mkdir -p artifacts
+          cp target/aarch64-unknown-linux-gnu/release/usbip-server artifacts/usbip-server-arm64
+          cp target/aarch64-unknown-linux-gnu/release/usbip-client artifacts/usbip-client-arm64
+          ls -lh artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: anyplug-linux-arm64
+          path: artifacts/*
+          if-no-files-found: error
+
+  # ── Linux ARMv7 ───────────────────────────────────────────────
+  linux-armv7:
+    name: Linux (ARMv7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (ARMv7 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-gnueabihf
+
+      - name: Install cross-compilation dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            gcc-arm-linux-gnueabihf \
+            libusb-1.0-0-dev:armhf
+
+      - name: Build release binaries
+        run: |
+          export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
+          cargo build --release --target armv7-unknown-linux-gnueabihf \
+            -p usbip-server -p usbip-client
+
+      - name: Collect binaries
+        run: |
+          mkdir -p artifacts
+          cp target/armv7-unknown-linux-gnueabihf/release/usbip-server artifacts/usbip-server-armv7
+          cp target/armv7-unknown-linux-gnueabihf/release/usbip-client artifacts/usbip-client-armv7
+          ls -lh artifacts/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: anyplug-linux-armv7
+          path: artifacts/*
+          if-no-files-found: error
+
+  # ── Windows x86_64 ────────────────────────────────────────────
   windows:
-    name: Windows (EXE)
+    name: Windows (x86_64 EXE)
     runs-on: windows-latest
     defaults:
       run:
@@ -36,34 +149,33 @@ jobs:
           toolchain: stable
           target: x86_64-pc-windows-msvc
 
-      - name: Build windows binary (release)
+      - name: Build Windows binary (release)
         run: cargo build --release -p anyplug
-        continue-on-error: true
 
       - name: Locate built EXE
         id: exe
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Recurse -Filter "*.exe" -Path target/release/ | Select-Object -First 1
+          $exe = Get-ChildItem -Recurse -Filter "anyplug.exe" -Path target/release/ | Select-Object -First 1
           if ($exe) {
             echo "EXE_PATH=$($exe.FullName)" >> $env:GITHUB_OUTPUT
             echo "EXE_NAME=$($exe.Name)" >> $env:GITHUB_OUTPUT
           } else {
-            echo "No EXE found — check build output"
             echo "EXE_PATH=" >> $env:GITHUB_OUTPUT
-            echo "EXE_NAME=usbip-windows.exe" >> $env:GITHUB_OUTPUT
+            echo "EXE_NAME=anyplug-x86_64-windows.exe" >> $env:GITHUB_OUTPUT
+            exit 1
           }
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
-          name: usbip-windows-x86_64
+          name: anyplug-windows-x86_64
           path: ${{ steps.exe.outputs.EXE_PATH }}
-          if-no-files-found: warn
+          if-no-files-found: error
 
-  # ── Android: build APK ───────────────────────────────────
+  # ── Android APK ───────────────────────────────────────────────
   android:
-    name: Android (APK)
+    name: Android (Phone APK + TV APK)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,61 +189,120 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v3
-
-      - name: Build release APK
-        working-directory: android
-        run: gradle assembleRelease --no-daemon
-        continue-on-error: true
-
-      - name: Locate APK
-        id: apk
+      - name: Generate Gradle wrapper
         run: |
-          APK=$(find . -name "*.apk" -path "*/release/*" | head -1)
-          if [ -z "$APK" ]; then
-            APK=$(find . -name "*.apk" | head -1)
-          fi
-          echo "APK_PATH=$APK" >> $GITHUB_OUTPUT
-          echo "APK_NAME=$(basename $APK)" >> $GITHUB_OUTPUT
+          cd android
+          gradle wrapper --gradle-version 8.2
+          chmod +x gradlew
 
-      - name: Upload APK artifact
+      - name: Build phone release APK
+        run: cd android && ./gradlew :app:assembleRelease --no-daemon
+
+      - name: Build TV release APK
+        run: cd android && ./gradlew :tv:assembleRelease --no-daemon
+
+      - name: Upload phone APK
         uses: actions/upload-artifact@v4
         with:
-          name: usbip-android-apk
-          path: ${{ steps.apk.outputs.APK_PATH }}
+          name: anyplug-android-phone
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Upload TV APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: anyplug-android-tv
+          path: android/tv/build/outputs/apk/release/tv-release.apk
           if-no-files-found: warn
 
-  # ── Publish: create GitHub Release with all artifacts ────
+  # ── Publish: create GitHub Release with all artifacts ──────────
   publish:
     name: Publish Release
-    needs: [windows, android]
+    needs:
+      - linux-x86_64
+      - linux-arm64
+      - linux-armv7
+      - windows
+      - android
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history for changelog
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts/
+          merge-multiple: false
 
-      - name: Generate release notes
-        id: notes
+      - name: Generate changelog from conventional commits
+        id: changelog
         run: |
-          echo "## AnyPlug Release ${{ github.ref_name }}" > _notes.md
-          echo "" >> _notes.md
-          echo "### Artifacts" >> _notes.md
-          echo "- **Windows EXE** — x86_64 MSVC build" >> _notes.md
-          echo "- **Android APK** — release build" >> _notes.md
-          echo "" >> _notes.md
-          echo "See CHANGELOG or ROADMAP.md for details." >> _notes.md
+          # Find previous tag
+          PREV_TAG=$(git tag --sort=-creatordate | grep -v "${{ github.ref_name }}" | head -1 || echo "")
+
+          # Generate changelog
+          if [ -n "$PREV_TAG" ]; then
+            bash ci/gen-changelog.sh "${{ github.ref_name }}" "$PREV_TAG" > _changelog.md
+            echo "prev_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+          else
+            bash ci/gen-changelog.sh "${{ github.ref_name }}" > _changelog.md
+            echo "prev_tag=" >> $GITHUB_OUTPUT
+          fi
+
+          echo "=== Changelog generated ==="
+          cat _changelog.md
+
+      - name: Build release body
+        id: body
+        run: |
+          {
+            echo "## AnyPlug Release ${{ github.ref_name }}"
+            echo ""
+            echo "### Artifacts"
+            echo ""
+            echo "| Platform | Architecture | Binary |"
+            echo "|----------|-------------|--------|"
+
+            if [ -d "artifacts/anyplug-linux-x86_64" ]; then
+              echo "| Linux | x86_64 | usbip-server, usbip-client |"
+            fi
+            if [ -d "artifacts/anyplug-linux-arm64" ]; then
+              echo "| Linux | ARM64 | usbip-server-arm64, usbip-client-arm64 |"
+            fi
+            if [ -d "artifacts/anyplug-linux-armv7" ]; then
+              echo "| Linux | ARMv7 | usbip-server-armv7, usbip-client-armv7 |"
+            fi
+            if [ -d "artifacts/anyplug-windows-x86_64" ]; then
+              echo "| Windows | x86_64 | anyplug.exe |"
+            fi
+            if [ -d "artifacts/anyplug-android-phone" ]; then
+              echo "| Android Phone | Universal | app-release.apk |"
+            fi
+            if [ -d "artifacts/anyplug-android-tv" ]; then
+              echo "| Android TV | Universal | tv-release.apk |"
+            fi
+
+            echo ""
+            echo "---"
+            echo ""
+            cat _changelog.md
+          } > _release_body.md
+
+          echo "=== Release body ==="
+          cat _release_body.md
+
+      - name: List artifact files for upload
+        run: |
+          find artifacts/ -type f | sort
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Release ${{ github.ref_name }}
-          body_path: _notes.md
+          body_path: _release_body.md
           draft: false
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') || contains(github.ref_name, 'rc') }}
           files: |
