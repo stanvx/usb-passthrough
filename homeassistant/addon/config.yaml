@@ -1,0 +1,55 @@
+name: AnyPlug Server
+version: "0.1.0"
+slug: anyplug_server
+description: USB/IP passthrough server — export USB devices over the network to AnyPlug clients
+url: https://github.com/stanvx/AnyPlug
+arch:
+  - aarch64
+  - amd64
+  - armhf
+  - armv7
+  - i386
+init: false
+startup: application
+boot: auto
+host_network: true
+privileged:
+  - SYS_ADMIN
+  - SYS_RAWIO
+  - SYS_USBDEV
+apparmor: false
+full_access: true
+usb: true
+ports:
+  3240/tcp: 3240
+ports_description:
+  3240/tcp: "USB/IP protocol — AnyPlug server listens here for client connections"
+options:
+  port: 3240
+  metrics_port: 0
+  encryption: false
+  allowlist: []
+schema:
+  port:
+    type: integer
+    default: 3240
+    minimum: 1024
+    maximum: 65535
+    description: "TCP port for USB/IP server connections"
+  metrics_port:
+    type: integer
+    default: 0
+    minimum: 0
+    maximum: 65535
+    description: "API / metrics endpoint port (0 = disabled, e.g. 3241)"
+  encryption:
+    type: boolean
+    default: false
+    description: "Enable AES-256-GCM encryption for all connections"
+  allowlist:
+    type: list
+    default: []
+    description: "Restrict exportable devices to specific VID:PID pairs (e.g. 046d:c261). Empty = all devices allowed"
+    items:
+      type: string
+      pattern: "^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}$"
