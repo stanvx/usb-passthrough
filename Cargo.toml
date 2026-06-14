@@ -38,6 +38,9 @@ anyhow = "1"
 crossbeam = "0.8"
 rand = "0.8"
 
+# Benchmarking
+criterion = { version = "0.5", features = ["html_reports"] }
+
 # Cross-platform — used conditionally per-crate with [target.'cfg(windows)'.dependencies]
 windows-service = "0.7"
 winapi = { version = "0.3", features = ["setupapi", "winusb", "ioapiset", "handleapi", "synchapi", "winbase"] }
