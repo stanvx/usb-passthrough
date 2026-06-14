@@ -48,7 +48,8 @@ jobs:
             qemu-system-x86-64 \
             bc flex bison \
             libelf-dev libssl-dev \
-            build-essential
+            build-essential \
+            musl-tools
 
       - name: Cache kernel bzImage
         id: cache-kernel

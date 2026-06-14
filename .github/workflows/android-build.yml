@@ -44,8 +44,14 @@ jobs:
 
       - name: Generate Gradle Wrapper
         run: |
-          cd android
+          # Generate wrapper in empty temp dir to avoid evaluating
+          # android/ build scripts with system Gradle (9.x), which
+          # is incompatible with AGP 8.2.0 used by the project.
+          mkdir -p /tmp/gradle-init
+          cd /tmp/gradle-init
           gradle wrapper --gradle-version 8.2
+          cp -r gradle gradlew gradlew.bat "${{ github.workspace }}/android/"
+          chmod +x "${{ github.workspace }}/android/gradlew"
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew

@@ -1,9 +1,9 @@
 [package]
 name = "anyplug"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-repository.workspace = true
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/stanvx/anyplug"
 description = "AnyPlug — Windows service + GUI tray client"
 
 [[bin]]
@@ -16,14 +16,14 @@ usbip-core = { path = "../shared/usbip-core" }
 usbip-server = { path = "../server/usbip-server" }
 usbip-client = { path = "../client/usbip-client" }
 
-# Workspace standard deps
-tokio.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-clap.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-toml.workspace = true
+# Standard deps (versions match workspace root; crate is not a workspace member)
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
 
 # Async runtime
 futures = "0.3"
