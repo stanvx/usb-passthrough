@@ -149,7 +149,7 @@ jobs:
     needs:
       - linux-x86_64
       - windows
-      - android
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
