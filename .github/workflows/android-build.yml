@@ -76,7 +76,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Run lint
-        run: cd android && ./gradlew lintDebug --no-daemon
+        run: cd android && ./gradlew lintDebug --no-daemon --stacktrace 2>&1 | tail -200
 
       - name: Build phone debug APK
         run: cd android && ./gradlew :app:assembleDebug
