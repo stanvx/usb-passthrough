@@ -1,0 +1,23 @@
+AnyPlug is a USB/IP passthrough bridge that lets you export a USB device from one device and import it on another as if it were locally attached. Built on the standard USB/IP kernel protocol.
+
+FEATURES:
+• Server Mode: Export locally-connected USB devices (HID, mass storage, USB-to-serial, printers, scanners) over your network
+• Client Mode: Import remote USB devices and present them as if locally connected
+• Cross-platform: Works between Android, Linux, and Windows
+• Encrypted Transport: Optional AES-256-GCM encryption with X25519 key exchange
+• Zero Configuration: Automatic device discovery via mDNS on your local network
+• TV Support: Optimized for Android TV with Leanback UI and D-pad navigation
+• Foreground Service: Reliable background operation with wake lock management
+
+HOW IT WORKS:
+- On the export device (Server), select a USB device to share
+- On the import device (Client), discover available servers on the network
+- Connect and use the remote USB device as if it were plugged in directly
+
+PERFECT FOR:
+- Sharing a printer or scanner across multiple computers
+- Using USB security keys and smart card readers remotely
+- Accessing USB storage devices on a headless server
+- Testing USB devices across different platforms
+
+AnyPlug is open source and in active development. Alpha stage — some features may be incomplete.
