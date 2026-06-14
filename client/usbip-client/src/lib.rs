@@ -1,4 +1,6 @@
 pub mod client;
+
+#[cfg(unix)]
 pub mod daemon;
 pub mod discovery;
 pub mod reconnect;

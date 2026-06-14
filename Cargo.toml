@@ -43,7 +43,7 @@ rand = "0.8"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 # Cross-platform — used conditionally per-crate with [target.'cfg(windows)'.dependencies]
-windows-service = "0.7"
+windows-service = "0.8"
 winapi = { version = "0.3", features = ["setupapi", "winusb", "ioapiset", "handleapi", "synchapi", "winbase"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 futures = "0.3"

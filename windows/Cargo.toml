@@ -30,7 +30,7 @@ futures = "0.3"
 anyhow = "1"
 
 # Windows service
-windows-service = "0.7"
+windows-service = "0.8"
 
 # Win32 API (SetupAPI, WinUSB)
 winapi = { version = "0.3", features = [

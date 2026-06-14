@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use usbip_client::{Client, ClientConfig};
+#[cfg(unix)]
 use usbip_client::daemon::{DaemonCommand, DaemonConfig, DaemonManager};
 use usbip_core::error::UsbIpResult;
 
@@ -40,12 +41,14 @@ enum Commands {
         no_reconnect: bool,
     },
     /// Run as persistent background daemon
+    #[cfg(unix)]
     Daemon {
         /// Path to config file (default: /etc/usbip-client/config.toml)
         #[arg(long, short)]
         config: Option<PathBuf>,
     },
     /// Control a running daemon via its Unix socket
+    #[cfg(unix)]
     #[command(name = "daemon-ctl")]
     DaemonCtl {
         /// Path to the daemon's Unix socket (default: auto-detect)
@@ -56,6 +59,7 @@ enum Commands {
     },
 }
 
+#[cfg(unix)]
 #[derive(Subcommand)]
 enum DaemonCtlAction {
     /// Tell the daemon to connect and import a device
@@ -147,6 +151,7 @@ async fn main() -> UsbIpResult<()> {
             println!("\nDetaching device...");
         },
 
+        #[cfg(unix)]
         Commands::Daemon { config } => {
             // Determine config path
             let config_path = match config {
@@ -165,7 +170,7 @@ async fn main() -> UsbIpResult<()> {
             println!("Starting USB/IP client daemon...");
             manager.run().await?;
         },
-
+        #[cfg(unix)]
         Commands::DaemonCtl { socket, action } => {
             // Determine socket path
             let socket_path = match socket {

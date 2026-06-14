@@ -41,12 +41,25 @@ jobs:
           java-version: 17
 
       - name: Set up Android SDK & NDK
+        # Don't redirect output — we need to see NDK install errors
         run: |
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
             "platforms;android-${ANDROID_COMPILE_SDK}" \
             "build-tools;${ANDROID_BUILD_TOOLS}" \
-            "ndk;27.0.12077973" \
-            > /dev/null
+            "ndk;27.0.12077973"
+
+      - name: Verify NDK install
+        run: |
+          NDK_PATH="$ANDROID_HOME/ndk/27.0.12077973"
+          if [ ! -d "$NDK_PATH" ]; then
+            echo "::error::NDK not found at $NDK_PATH after sdkmanager install"
+            ls -la "$ANDROID_HOME/ndk/" 2>&1 || true
+            exit 1
+          fi
+          echo "NDK installed at $NDK_PATH"
+          # Write local.properties so AGP can find the NDK on the CI runner
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+          echo "ndk.dir=$NDK_PATH" >> android/local.properties
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew

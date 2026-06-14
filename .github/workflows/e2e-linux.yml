@@ -49,7 +49,23 @@ jobs:
             bc flex bison \
             libelf-dev libssl-dev \
             build-essential \
-            musl-tools
+            musl-tools linux-libc-dev
+
+      # libusb1-sys 0.7.0 vendored build includes <linux/magic.h>, which
+      # the musl libc header set does not provide. Copy the host kernel's
+      # UAPI linux/ headers into the musl sysroot so the musl-gcc compile
+      # can find them. This is a known musl-libc gap; see:
+      # https://wiki.musl-libc.org/faq.html
+      - name: Patch musl sysroot with kernel UAPI headers
+        run: |
+          MUSL_INC="$(dirname $(which musl-gcc))/../include/x86_64-linux-musl"
+          if [ -d /usr/include/linux ] && [ -d "$MUSL_INC" ]; then
+            sudo cp -r /usr/include/linux "$MUSL_INC/"
+            sudo cp -r /usr/include/asm-generic "$MUSL_INC/" 2>/dev/null || true
+            echo "Patched musl sysroot at $MUSL_INC with kernel UAPI headers"
+          else
+            echo "::warning::musl sysroot not found at $MUSL_INC — libusb1-sys build may fail"
+          fi
 
       - name: Cache kernel bzImage
         id: cache-kernel

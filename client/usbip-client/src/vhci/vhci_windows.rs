@@ -7,10 +7,9 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 
 use tracing::info;
-use winapi::um::fileapi::CreateFileW;
+use winapi::um::fileapi::{CreateFileW, OPEN_EXISTING};
 use winapi::um::handleapi::CloseHandle;
 use winapi::um::ioapiset::DeviceIoControl;
-use winapi::um::winbase::OPEN_EXISTING;
 use winapi::um::winnt::{FILE_SHARE_READ, FILE_SHARE_WRITE, GENERIC_READ, GENERIC_WRITE};
 
 use usbip_core::error::*;
@@ -54,7 +53,7 @@ impl VhciBackend for WindowsVhciBackend {
         if handle == winapi::um::handleapi::INVALID_HANDLE_VALUE {
             return Err(ErrorKind::NotSupported(
                 r"Cannot open \\.\USBIP-VHCI. Is usbip-win2 driver installed?".into(),
-            ));
+            ).into());
         }
 
         // Build IOCTL input buffer: port, devid, speed, descriptor_block
@@ -83,7 +82,7 @@ impl VhciBackend for WindowsVhciBackend {
         }
 
         if result == 0 {
-            return Err(ErrorKind::NotSupported("VHCI attach IOCTL failed".into()));
+            return Err(ErrorKind::NotSupported("VHCI attach IOCTL failed".into()).into());
         }
 
         info!("Windows VHCI: attached device at port {}", port);

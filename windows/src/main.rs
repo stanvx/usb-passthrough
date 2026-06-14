@@ -6,6 +6,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![allow(unused_imports)] // workspace deps imported for future use
 
+#[macro_use]
+extern crate windows_service;
+
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -463,84 +466,81 @@ fn run_as_service() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn ffi_service_main(_arguments: Vec<windows_service::service::ServiceMainArgs>) {
-    use windows_service::service::{ServiceControl, ServiceControlHandler, ServiceStatus};
+// Generate the FFI entry point. The `define_windows_service!` macro
+// produces a low-level `extern "system" fn` that parses service arguments
+// and forwards them to `my_service_main`.
+define_windows_service!(ffi_service_main, my_service_main);
+
+fn my_service_main(_arguments: Vec<std::ffi::OsString>) {
+    use windows_service::service::{
+        ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
+        ServiceType,
+    };
     use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
-    use windows_service::{service_dispatcher, ServiceMain};
 
-    struct UsbIpService;
+    let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel::<()>();
 
-    impl ServiceMain for UsbIpService {
-        fn main(self, _arguments: Vec<std::ffi::OsString>) {
-            let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel::<()>();
+    let status_handle = service_control_handler::register(
+        "anyplug-service",
+        move |control| match control {
+            ServiceControl::Stop | ServiceControl::Shutdown => {
+                let _ = shutdown_tx.send(());
+                ServiceControlHandlerResult::NoError
+            },
+            ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
+            _ => ServiceControlHandlerResult::NotImplemented,
+        },
+    )
+    .expect("Failed to register service control handler");
 
-            let status_handle = service_control_handler::register(
-                "anyplug-service",
-                move |control| match control {
-                    ServiceControl::Stop | ServiceControl::Shutdown => {
-                        let _ = shutdown_tx.send(());
-                        ServiceControlHandlerResult::NoError
-                    },
-                    ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
-                    _ => ServiceControlHandlerResult::NotImplemented,
-                },
-            )
-            .expect("Failed to register service control handler");
+    // Report running
+    status_handle
+        .set_service_status(ServiceStatus {
+            service_type: ServiceType::OWN_PROCESS,
+            current_state: ServiceState::Running,
+            controls_accepted: ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 0,
+            wait_hint: std::time::Duration::from_secs(5),
+            process_id: Some(std::process::id()),
+        })
+        .expect("Failed to set service status");
 
-            // Report running
-            status_handle
-                .set_service_status(ServiceStatus {
-                    service_type: windows_service::service::ServiceType::OWN_PROCESS,
-                    current_state: windows_service::service::ServiceState::Running,
-                    controls_accepted: windows_service::service::ServiceControlAccept::STOP
-                        | windows_service::service::ServiceControlAccept::SHUTDOWN,
-                    exit_code: windows_service::service::ServiceExitCode::Win32(0),
-                    checkpoint: 0,
-                    wait_hint: std::time::Duration::from_secs(5),
-                    process_id: Some(std::process::id()),
-                })
-                .expect("Failed to set service status");
+    tracing::info!("AnyPlug service is running");
 
-            tracing::info!("AnyPlug service is running");
+    // Start the server
+    let config = usbip_server::ServerConfig {
+        bind_address: "0.0.0.0".to_string(),
+        port: 3240,
+        allowed_vid_pid: Vec::new(),
+        require_confirmation: false,
+        encryption_enabled: false,
+        tcp_nodelay: true,
+    };
 
-            // Start the server
-            let config = usbip_server::ServerConfig {
-                bind_address: "0.0.0.0".to_string(),
-                port: 3240,
-                allowed_vid_pid: Vec::new(),
-                require_confirmation: false,
-                encryption_enabled: false,
-                tcp_nodelay: true,
-            };
+    let server_handle = std::thread::spawn(|| {
+        let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+        rt.block_on(async {
+            let server =
+                usbip_server::Server::new(config).await.expect("Failed to create server");
+            server.run().await.ok();
+        });
+    });
 
-            let server_handle = std::thread::spawn(|| {
-                let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
-                rt.block_on(async {
-                    let server =
-                        usbip_server::Server::new(config).await.expect("Failed to create server");
-                    server.run().await.ok();
-                });
-            });
+    // Wait for shutdown signal
+    let _ = shutdown_rx.recv();
 
-            // Wait for shutdown signal
-            let _ = shutdown_rx.recv();
+    tracing::info!("Shutting down AnyPlug service");
 
-            tracing::info!("Shutting down AnyPlug service");
-
-            status_handle
-                .set_service_status(ServiceStatus {
-                    service_type: windows_service::service::ServiceType::OWN_PROCESS,
-                    current_state: windows_service::service::ServiceState::Stopped,
-                    controls_accepted: windows_service::service::ServiceControlAccept::empty(),
-                    exit_code: windows_service::service::ServiceExitCode::Win32(0),
-                    checkpoint: 0,
-                    wait_hint: std::time::Duration::default(),
-                    process_id: None,
-                })
-                .expect("Failed to set service status");
-        }
-    }
-
-    service_dispatcher::start("anyplug-service", UsbIpService)
-        .expect("Failed to start service dispatcher");
+    status_handle
+        .set_service_status(ServiceStatus {
+            service_type: ServiceType::OWN_PROCESS,
+            current_state: ServiceState::Stopped,
+            controls_accepted: ServiceControlAccept::empty(),
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 0,
+            wait_hint: std::time::Duration::default(),
+            process_id: None,
+        })
+        .expect("Failed to set service status");
 }
