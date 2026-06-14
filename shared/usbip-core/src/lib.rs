@@ -23,8 +23,43 @@ pub use crypto::*;
 pub use descriptor::*;
 pub use error::*;
 pub use pool::*;
-pub use protocol::*;
-pub use urb::*;
+
+// Explicit re-exports from `protocol` and `urb` to avoid ambiguous
+// glob re-export of `U32BE` (which is defined in both modules).
+
+pub use protocol::UsbIpDeviceEntry;
+pub use protocol::UsbIpHeader;
+pub use protocol::UsbIpImportReply;
+pub use protocol::I32BE;
+pub use protocol::OP_REP_DEVLIST;
+pub use protocol::OP_REP_IMPORT;
+pub use protocol::OP_REQ_DEVLIST;
+pub use protocol::OP_REQ_IMPORT;
+pub use protocol::STATUS_ST_DEV_BUSY;
+pub use protocol::STATUS_ST_DEV_ERR;
+pub use protocol::STATUS_ST_ERROR;
+pub use protocol::STATUS_ST_NA;
+pub use protocol::STATUS_ST_NODEV;
+pub use protocol::STATUS_SUCCESS;
+pub use protocol::U16BE;
+pub use protocol::U32BE;
+pub use protocol::URB_DIR_IN;
+pub use protocol::URB_DIR_OUT;
+pub use protocol::URB_FREE_BUFFER;
+pub use protocol::URB_ISO_ASAP;
+pub use protocol::URB_NO_INTERRUPT;
+pub use protocol::URB_NO_TRANSFER_DMA_MAP;
+pub use protocol::URB_SHORT_NOT_OK;
+pub use protocol::URB_ZERO_PACKET;
+pub use protocol::USBIP_CMD_SUBMIT;
+pub use protocol::USBIP_RET_SUBMIT;
+pub use protocol::USBIP_RET_UNLINK;
+
+pub use urb::UrbBuffer;
+pub use urb::UsbIpCmdSubmit;
+pub use urb::UsbIpMessage;
+pub use urb::UsbIpRetSubmit;
+pub use urb::UsbIpRetUnlink;
 
 /// Default USB/IP TCP port (IANA-registered).
 pub const USBIP_PORT: u16 = 3240;

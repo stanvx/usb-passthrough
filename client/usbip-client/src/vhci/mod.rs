@@ -136,7 +136,7 @@ fn detect_backend() -> UsbIpResult<Box<dyn VhciBackend>> {
     #[cfg(target_os = "linux")]
     {
         let inner = vhci_linux::LinuxVhciBackend::new()?;
-        return Ok(Box::new(inner));
+        Ok(Box::new(inner))
     }
 
     #[cfg(windows)]
@@ -233,7 +233,7 @@ mod tests {
     /// Create a minimal `UsbIpDeviceEntry` for testing.
     fn make_dummy_entry(busid: &str, vid: u16, pid: u16) -> UsbIpDeviceEntry {
         use zerocopy::byteorder::BigEndian;
-        use zerocopy::{FromBytes, FromZeros};
+        use zerocopy::FromZeros;
 
         let mut entry = UsbIpDeviceEntry::new_zeroed();
         let busid_bytes = busid.as_bytes();

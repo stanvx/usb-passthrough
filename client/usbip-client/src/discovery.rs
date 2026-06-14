@@ -42,19 +42,18 @@ impl MdnsBrowser {
             }
 
             match receiver.recv_timeout(remaining) {
-                Ok(event) => match event {
-                    ServiceEvent::ServiceResolved(info) => {
+                Ok(event) => {
+                    if let ServiceEvent::ServiceResolved(info) = event {
                         let addr = info.get_addresses();
                         for a in addr.iter() {
                             let port = info.get_port();
-                            let sock = SocketAddr::new((*a).into(), port);
+                            let sock = SocketAddr::new(*a, port);
                             if !servers.contains(&sock) {
                                 info!("mDNS discovered USB/IP server at {}", sock);
                                 servers.push(sock);
                             }
                         }
-                    },
-                    _ => {},
+                    }
                 },
                 Err(_) => break, // timeout
             }

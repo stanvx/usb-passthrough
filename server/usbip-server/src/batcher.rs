@@ -138,7 +138,7 @@ impl UrbBatcher {
     ///
     /// This is a non-blocking check — no I/O, just a time comparison.
     pub fn should_timeout(&self) -> bool {
-        self.batch_start.map_or(false, |start| start.elapsed() >= self.timeout)
+        self.batch_start.is_some_and(|start| start.elapsed() >= self.timeout)
             && !self.buffer.is_empty()
     }
 
@@ -164,6 +164,12 @@ impl UrbBatcher {
     /// Whether the batch is empty.
     pub fn is_empty(&self) -> bool {
         self.count == 0
+    }
+}
+
+impl Default for UrbBatcher {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

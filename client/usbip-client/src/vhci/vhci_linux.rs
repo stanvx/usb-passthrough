@@ -17,7 +17,8 @@ use crate::vhci::{VhciBackend, VhciDevice};
 pub(super) struct LinuxVhciBackend {
     /// Sysfs path to the VHCI controller.
     sysfs_path: PathBuf,
-    /// Number of available VHCI ports.
+    /// Number of VHCI ports to manage.
+    #[allow(dead_code)]
     num_ports: u32,
 }
 
@@ -33,7 +34,8 @@ impl LinuxVhciBackend {
                     "vhci-hcd kernel module not available. Install with: \
                      sudo modprobe vhci-hcd"
                         .into(),
-                ));
+                )
+                .into());
             }
             std::thread::sleep(std::time::Duration::from_millis(500));
             8
@@ -93,7 +95,7 @@ impl VhciBackend for LinuxVhciBackend {
         let port = devid;
         let unlink_path = self.sysfs_path.join(format!("port{}/urb_unlink", port));
         let buf = seqnum.to_be_bytes();
-        let _ = fs::write(&unlink_path, &buf);
+        let _ = fs::write(&unlink_path, buf);
         Ok(())
     }
 

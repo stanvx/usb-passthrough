@@ -25,6 +25,9 @@ byteorder = { workspace = true }
 zerocopy = { workspace = true }
 anyhow = { workspace = true }
 uuid = { workspace = true }
+rand = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
+dirs = "6"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { workspace = true }

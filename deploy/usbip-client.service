@@ -1,0 +1,57 @@
+# usbip-client: USB/IP Client Daemon for AnyPlug
+#
+# Installs as a systemd service that auto-starts on boot, connects to
+# configured USB/IP servers/devices, and survives login/logout cycles.
+#
+# Installation:
+#   sudo cp usbip-client.service /etc/systemd/system/
+#   sudo mkdir -p /etc/usbip-client
+#   # Create config at /etc/usbip-client/config.toml (see example below)
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable usbip-client
+#   sudo systemctl start usbip-client
+#
+# Example config.toml (/etc/usbip-client/config.toml):
+#   socket_path = "/var/run/usbip-client/usbip-client.sock"
+#   [[connections]]
+#   server = "192.168.1.100:3240"
+#   busid = "1-2"
+#
+# CLI control commands:
+#   usbip-client daemon-ctl status
+#   usbip-client daemon-ctl connect <server> <busid>
+#   usbip-client daemon-ctl disconnect <busid>
+#   usbip-client daemon-ctl shutdown
+
+[Unit]
+Description=USB/IP Client Daemon — AnyPlug device importer
+Documentation=https://github.com/stanvx/anyplug
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/usbip-client daemon
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+# Gradual restart if repeatedly failing
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+# Hardening
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/run/usbip-client
+ReadWritePaths=/etc/usbip-client
+
+# Standard runtime directory
+RuntimeDirectory=usbip-client
+RuntimeDirectoryMode=0755
+
+[Install]
+WantedBy=multi-user.target

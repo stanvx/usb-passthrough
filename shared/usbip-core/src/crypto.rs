@@ -63,8 +63,7 @@ pub fn generate_key_pair() -> CryptoResult<(Vec<u8>, EphemeralPrivateKey)> {
     let rng = SystemRandom::new();
     let private_key =
         EphemeralPrivateKey::generate(&X25519, &rng).map_err(|_| CryptoError::KeyGeneration)?;
-    let public_key =
-        private_key.compute_public_key().map_err(|_| CryptoError::KeyGeneration)?;
+    let public_key = private_key.compute_public_key().map_err(|_| CryptoError::KeyGeneration)?;
     Ok((public_key.as_ref().to_vec(), private_key))
 }
 
@@ -97,12 +96,10 @@ pub fn derive_session_key(shared_secret: &[u8]) -> CryptoResult<LessSafeKey> {
     let info = b"usbip-session-key";
     let prk = salt.extract(shared_secret);
     let info_slices: &[&[u8]] = &[info];
-    let okm = prk.expand(info_slices, Aes256GcmKeyType)
-        .map_err(|_| CryptoError::KeyDerivation)?;
+    let okm = prk.expand(info_slices, Aes256GcmKeyType).map_err(|_| CryptoError::KeyDerivation)?;
 
     let mut key_bytes = [0u8; 32];
-    okm.fill(&mut key_bytes)
-        .map_err(|_| CryptoError::KeyDerivation)?;
+    okm.fill(&mut key_bytes).map_err(|_| CryptoError::KeyDerivation)?;
 
     let unbound =
         UnboundKey::new(&AES_256_GCM, &key_bytes).map_err(|_| CryptoError::KeyDerivation)?;
@@ -114,26 +111,20 @@ pub fn derive_session_key_hex(
     private_key: EphemeralPrivateKey,
     peer_public_key_hex: &str,
 ) -> CryptoResult<Vec<u8>> {
-    let pub_bytes = hex_decode(peer_public_key_hex)
-        .ok_or(CryptoError::KeyDerivation)?;
+    let pub_bytes = hex_decode(peer_public_key_hex).ok_or(CryptoError::KeyDerivation)?;
     let shared_secret = agree(private_key, &pub_bytes)?;
     let mut key_bytes = [0u8; 32];
     derive_session_key_to_bytes(&shared_secret, &mut key_bytes)?;
     Ok(key_bytes.to_vec())
 }
 
-fn derive_session_key_to_bytes(
-    shared_secret: &[u8],
-    out: &mut [u8; 32],
-) -> CryptoResult<()> {
+fn derive_session_key_to_bytes(shared_secret: &[u8], out: &mut [u8; 32]) -> CryptoResult<()> {
     let salt = Salt::new(HKDF_SHA256, b"USBIP-PASSTHROUGH-V1");
     let info = b"usbip-session-key";
     let prk = salt.extract(shared_secret);
     let info_slices: &[&[u8]] = &[info];
-    let okm = prk.expand(info_slices, Aes256GcmKeyType)
-        .map_err(|_| CryptoError::KeyDerivation)?;
-    okm.fill(out.as_mut_slice())
-        .map_err(|_| CryptoError::KeyDerivation)
+    let okm = prk.expand(info_slices, Aes256GcmKeyType).map_err(|_| CryptoError::KeyDerivation)?;
+    okm.fill(out.as_mut_slice()).map_err(|_| CryptoError::KeyDerivation)
 }
 
 // ─── Encrypt / Decrypt ───────────────────────────────────────
@@ -145,16 +136,14 @@ fn derive_session_key_to_bytes(
 pub fn encrypt(key: &LessSafeKey, plaintext: &[u8]) -> CryptoResult<Vec<u8>> {
     let rng = SystemRandom::new();
     let mut nonce_bytes = [0u8; 12];
-    rng.fill(&mut nonce_bytes)
-        .map_err(|_| CryptoError::Encryption)?;
+    rng.fill(&mut nonce_bytes).map_err(|_| CryptoError::Encryption)?;
 
     encrypt_with_nonce(key, plaintext, &nonce_bytes)
 }
 
 /// Encrypt with raw key bytes (for JNI bridge).
 pub fn encrypt_with_key_bytes(key_bytes: &[u8], plaintext: &[u8]) -> CryptoResult<Vec<u8>> {
-    let unbound =
-        UnboundKey::new(&AES_256_GCM, key_bytes).map_err(|_| CryptoError::Encryption)?;
+    let unbound = UnboundKey::new(&AES_256_GCM, key_bytes).map_err(|_| CryptoError::Encryption)?;
     let key = LessSafeKey::new(unbound);
     encrypt(&key, plaintext)
 }
@@ -168,22 +157,19 @@ pub fn decrypt(key: &LessSafeKey, wire_data: &[u8]) -> CryptoResult<Vec<u8>> {
         return Err(CryptoError::Decryption);
     }
 
-    let nonce_len = u32::from_be_bytes([wire_data[0], wire_data[1], wire_data[2], wire_data[3]])
-        as usize;
+    let nonce_len =
+        u32::from_be_bytes([wire_data[0], wire_data[1], wire_data[2], wire_data[3]]) as usize;
     if nonce_len != 12 || wire_data.len() < 4 + 12 + 16 {
         return Err(CryptoError::InvalidNonce);
     }
 
-    let nonce_bytes: [u8; 12] = wire_data[4..16]
-        .try_into()
-        .map_err(|_| CryptoError::InvalidNonce)?;
+    let nonce_bytes: [u8; 12] =
+        wire_data[4..16].try_into().map_err(|_| CryptoError::InvalidNonce)?;
     let nonce = Nonce::assume_unique_for_key(nonce_bytes);
     let aad = Aad::empty();
 
     let mut buf = wire_data[16..].to_vec();
-    let plaintext = key
-        .open_in_place(nonce, aad, &mut buf)
-        .map_err(|_| CryptoError::Decryption)?;
+    let plaintext = key.open_in_place(nonce, aad, &mut buf).map_err(|_| CryptoError::Decryption)?;
     // `open_in_place` returns a slice that already excludes the GCM tag
     // and uses the trailing 16 bytes of `buf` as scratch (zeroed on
     // success). Use the returned slice, not `buf`, so we don't ship
@@ -193,8 +179,7 @@ pub fn decrypt(key: &LessSafeKey, wire_data: &[u8]) -> CryptoResult<Vec<u8>> {
 
 /// Decrypt with raw key bytes (for JNI bridge).
 pub fn decrypt_with_key_bytes(key_bytes: &[u8], wire_data: &[u8]) -> CryptoResult<Vec<u8>> {
-    let unbound =
-        UnboundKey::new(&AES_256_GCM, key_bytes).map_err(|_| CryptoError::Decryption)?;
+    let unbound = UnboundKey::new(&AES_256_GCM, key_bytes).map_err(|_| CryptoError::Decryption)?;
     let key = LessSafeKey::new(unbound);
     decrypt(&key, wire_data)
 }
@@ -205,8 +190,7 @@ pub fn decrypt_with_key_bytes(key_bytes: &[u8], wire_data: &[u8]) -> CryptoResul
 pub fn encrypt_message(key: &LessSafeKey, plaintext: &[u8]) -> CryptoResult<Vec<u8>> {
     let rng = SystemRandom::new();
     let mut nonce_bytes = [0u8; 12];
-    rng.fill(&mut nonce_bytes)
-        .map_err(|_| CryptoError::Encryption)?;
+    rng.fill(&mut nonce_bytes).map_err(|_| CryptoError::Encryption)?;
 
     encrypt_with_nonce(key, plaintext, &nonce_bytes)
 }
@@ -225,8 +209,7 @@ pub fn encrypt_with_nonce(
     let aad = Aad::empty();
 
     let mut buf = plaintext.to_vec();
-    key.seal_in_place_append_tag(nonce, aad, &mut buf)
-        .map_err(|_| CryptoError::Encryption)?;
+    key.seal_in_place_append_tag(nonce, aad, &mut buf).map_err(|_| CryptoError::Encryption)?;
 
     // Wire format: [4-byte nonce_len = 12][12-byte nonce][ciphertext+tag]
     let mut result = Vec::with_capacity(4 + 12 + buf.len());
@@ -241,7 +224,9 @@ pub fn encrypt_with_nonce(
 
 struct Aes256GcmKeyType;
 impl KeyType for Aes256GcmKeyType {
-    fn len(&self) -> usize { 32 }
+    fn len(&self) -> usize {
+        32
+    }
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -249,13 +234,10 @@ fn hex_encode(bytes: &[u8]) -> String {
 }
 
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
-        .collect()
+    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok()).collect()
 }
 
 #[cfg(test)]

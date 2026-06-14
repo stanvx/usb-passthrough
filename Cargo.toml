@@ -4,8 +4,11 @@ members = [
     "shared/usbip-core",
     "server/usbip-server",
     "client/usbip-client",
-    "windows",
 ]
+
+# Windows crate excluded on Linux — use `cargo build --workspace`
+# on Windows or with cross-compilation target.
+# members = ["windows"]
 
 [workspace.package]
 version = "0.1.0"

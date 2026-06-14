@@ -1,10 +1,15 @@
 //! USB/IP Client — CLI entry point.
+//!
+//! Supports both foreground connection mode and a persistent daemon mode
+//! with Unix domain socket control.
 
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use usbip_client::{Client, ClientConfig};
+use usbip_client::daemon::{DaemonCommand, DaemonConfig, DaemonManager};
 use usbip_core::error::UsbIpResult;
 
 #[derive(Parser)]
@@ -24,7 +29,7 @@ enum Commands {
         /// Server address (host:port)
         server: SocketAddr,
     },
-    /// Import a USB device from a server
+    /// Import a USB device from a server (foreground mode)
     Connect {
         /// Server address (host:port)
         server: SocketAddr,
@@ -34,6 +39,41 @@ enum Commands {
         #[arg(long)]
         no_reconnect: bool,
     },
+    /// Run as persistent background daemon
+    Daemon {
+        /// Path to config file (default: /etc/usbip-client/config.toml)
+        #[arg(long, short)]
+        config: Option<PathBuf>,
+    },
+    /// Control a running daemon via its Unix socket
+    #[command(name = "daemon-ctl")]
+    DaemonCtl {
+        /// Path to the daemon's Unix socket (default: auto-detect)
+        #[arg(long, short)]
+        socket: Option<PathBuf>,
+        #[command(subcommand)]
+        action: DaemonCtlAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum DaemonCtlAction {
+    /// Tell the daemon to connect and import a device
+    Connect {
+        /// Server address (host:port)
+        server: SocketAddr,
+        /// Device bus ID to import
+        busid: String,
+    },
+    /// Tell the daemon to disconnect a device
+    Disconnect {
+        /// Device bus ID to disconnect
+        busid: String,
+    },
+    /// Query daemon status
+    Status,
+    /// Shut down the daemon gracefully
+    Shutdown,
 }
 
 #[tokio::main]
@@ -105,6 +145,90 @@ async fn main() -> UsbIpResult<()> {
             // Wait for signal
             tokio::signal::ctrl_c().await?;
             println!("\nDetaching device...");
+        },
+
+        Commands::Daemon { config } => {
+            // Determine config path
+            let config_path = match config {
+                Some(path) => path,
+                None => {
+                    // Try default paths, falling back to first writable candidate
+                    match DaemonConfig::find_config() {
+                        Some(path) => path,
+                        None => PathBuf::from("/etc/usbip-client/config.toml"),
+                    }
+                },
+            };
+
+            let daemon_config = DaemonConfig::load(&config_path)?;
+            let manager = DaemonManager::new(daemon_config)?;
+            println!("Starting USB/IP client daemon...");
+            manager.run().await?;
+        },
+
+        Commands::DaemonCtl { socket, action } => {
+            // Determine socket path
+            let socket_path = match socket {
+                Some(path) => path,
+                None => {
+                    // Try to auto-detect from config
+                    match DaemonConfig::find_config() {
+                        Some(cfg_path) => DaemonConfig::load(&cfg_path)
+                            .map(|cfg| cfg.socket_path)
+                            .unwrap_or_else(|_| PathBuf::from("/var/run/usbip-client/usbip-client.sock")),
+                        None => PathBuf::from("/var/run/usbip-client/usbip-client.sock"),
+                    }
+                },
+            };
+
+            if !socket_path.exists() {
+                eprintln!(
+                    "Error: daemon socket not found at {}. Is the daemon running?",
+                    socket_path.display()
+                );
+                std::process::exit(1);
+            }
+
+            let cmd = match action {
+                DaemonCtlAction::Connect { server, busid } => {
+                    DaemonCommand::Connect { server, busid }
+                },
+                DaemonCtlAction::Disconnect { busid } => {
+                    DaemonCommand::Disconnect { busid }
+                },
+                DaemonCtlAction::Status => DaemonCommand::Status,
+                DaemonCtlAction::Shutdown => DaemonCommand::Shutdown,
+            };
+
+            let response = usbip_client::daemon::send_daemon_command(&socket_path, &cmd).await?;
+
+            if response.status == "ok" {
+                println!("OK: {}", response.message.as_deref().unwrap_or(""));
+                if let Some(connections) = &response.connections {
+                    if connections.is_empty() {
+                        println!("  No active connections.");
+                    } else {
+                        println!("  Connections:");
+                        for conn in connections {
+                            let state_icon = match conn.state.as_str() {
+                                "connected" => "\u{2713}",
+                                "connecting" => "...",
+                                _ => "!",
+                            };
+                            println!(
+                                "  {} {} ({}) — {}",
+                                state_icon, conn.busid, conn.server, conn.state
+                            );
+                        }
+                    }
+                }
+            } else {
+                eprintln!(
+                    "Error: {}",
+                    response.message.as_deref().unwrap_or("unknown error")
+                );
+                std::process::exit(1);
+            }
         },
     }
 

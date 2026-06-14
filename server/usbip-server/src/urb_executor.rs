@@ -12,7 +12,7 @@ use usbip_core::urb::*;
 // U32BE is re-exported through both protocol and urb; import from protocol
 // explicitly to avoid the ambiguous-glob-reexport warning.
 use usbip_core::protocol::U32BE;
-use zerocopy::{FromBytes, IntoBytes};
+use zerocopy::IntoBytes;
 
 use crate::usb::UsbDeviceManager;
 
