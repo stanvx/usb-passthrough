@@ -256,10 +256,10 @@ mod tests {
     #[test]
     fn test_delay_caps_at_max_delay_secs() {
         let config = ReconnectConfig::default();
-        // After enough attempts, delay should be at the cap (30s max jittered)
+        // After enough attempts, delay should be at the cap (30s) with ±25% jitter
         let d_high = config.delay_for_attempt(10).as_secs_f64();
-        assert!(d_high <= 31.0, "high attempt delay ({d_high}s) should be near 30s cap");
-        assert!(d_high >= 0.1, "delay should be positive");
+        assert!(d_high <= 37.5, "high attempt delay ({d_high}s) should be at most 30s + 25% jitter");
+        assert!(d_high >= 20.0, "delay should be near the 30s cap");
     }
 
     #[test]

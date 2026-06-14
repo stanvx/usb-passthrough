@@ -86,6 +86,53 @@ impl UrbExecutor {
         }
         reply
     }
+
+    /// Build a reply directly into a pre-allocated buffer (zero-copy variant).
+    ///
+    /// This avoids the allocation overhead of `build_reply` by writing into
+    /// a caller-provided buffer.  Returns the used portion of the buffer.
+    ///
+    /// The provided buffer must be at least `UsbIpHeader::SIZE +
+    /// UsbIpRetSubmit::HEADER_SIZE + result.data.len()` bytes long.
+    pub fn build_reply_to_buf<'a>(
+        &self,
+        buf: &'a mut [u8],
+        cmd: &UsbIpCmdSubmit,
+        result: &UrbResult,
+    ) -> &'a mut [u8] {
+        let header_offset = 0;
+        let ret_offset = UsbIpHeader::SIZE;
+        let data_offset = ret_offset + UsbIpRetSubmit::HEADER_SIZE;
+        let total_len = data_offset + result.data.len();
+
+        // Write UsbIpHeader
+        let hdr = UsbIpHeader::new(USBIP_RET_SUBMIT);
+        let hdr_bytes = hdr.as_bytes();
+        buf[header_offset..header_offset + hdr_bytes.len()].copy_from_slice(hdr_bytes);
+
+        // Write UsbIpRetSubmit
+        let ret = UsbIpRetSubmit {
+            seqnum: cmd.seqnum,
+            devid: cmd.devid,
+            direction: cmd.direction,
+            ep: cmd.ep,
+            status: U32BE::new(result.status as u32),
+            actual_length: U32BE::new(result.actual_length),
+            start_frame: cmd.start_frame,
+            number_of_packets: cmd.number_of_packets,
+            error_count: U32BE::new(if result.status == 0 { 0 } else { 1 }),
+            setup: cmd.setup,
+        };
+        let ret_bytes = ret.as_bytes();
+        buf[ret_offset..ret_offset + ret_bytes.len()].copy_from_slice(ret_bytes);
+
+        // Write data directly (avoids intermediate Vec allocation)
+        if !result.data.is_empty() {
+            buf[data_offset..total_len].copy_from_slice(&result.data);
+        }
+
+        &mut buf[..total_len]
+    }
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────
