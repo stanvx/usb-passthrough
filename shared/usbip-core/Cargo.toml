@@ -18,8 +18,13 @@ crossbeam.workspace = true
 rand.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"
+
+[[bench]]
+name = "urb_pool_bench"
+harness = false
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rusb.workspace = true
