@@ -13,6 +13,7 @@ android {
     // "Unexpected error during link" during PNG processing on CI.
     aaptOptions {
         cruncherEnabled = false
+        noCompress += listOf("webp")
     }
 
     defaultConfig {
