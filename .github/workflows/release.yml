@@ -164,7 +164,6 @@ jobs:
     needs:
       - linux-x86_64
       - windows
-      - android
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
