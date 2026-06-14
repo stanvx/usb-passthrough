@@ -12,14 +12,13 @@ use std::ptr;
 
 use winapi::shared::minwindef::{DWORD, FALSE, TRUE};
 use winapi::shared::ntdef::HANDLE;
-use winapi::shared::usb::GUID_DEVINTERFACE_USB_DEVICE;
-use winapi::um::handleapi::CloseHandle;
+use winapi::shared::usbiodef::GUID_DEVINTERFACE_USB_DEVICE;
+use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 use winapi::um::setupapi::{
     SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo, SetupDiGetClassDevsW,
     SetupDiGetDeviceInstanceIdW, SetupDiGetDeviceRegistryPropertyW, DIGCF_DEVICEINTERFACE,
-    DIGCF_PRESENT, SPDRP_DEVICE_DESC, SPDRP_HARDWAREID, SP_DEVINFO_DATA,
+    DIGCF_PRESENT, SPDRP_DEVICEDESC, SPDRP_HARDWAREID, SP_DEVINFO_DATA,
 };
-use winapi::um::winbase::INVALID_HANDLE_VALUE;
 
 use usbip_core::error::*;
 
@@ -81,9 +80,9 @@ pub fn enumerate_usb_devices() -> UsbIpResult<Vec<UsbDeviceInfo>> {
     };
 
     if dev_info_set == INVALID_HANDLE_VALUE {
-        return Err(UsbIpError::NotSupported(
+        return Err(UsbIpError::from(ErrorKind::NotSupported(
             "SetupDiGetClassDevsW failed: no USB device info set".to_string(),
-        ));
+        )));
     }
 
     // Enumerate devices
@@ -109,7 +108,7 @@ pub fn enumerate_usb_devices() -> UsbIpResult<Vec<UsbDeviceInfo>> {
 
         // Get the device description
         if let Ok(desc) =
-            get_device_registry_string(dev_info_set, &dev_info_data, SPDRP_DEVICE_DESC)
+            get_device_registry_string(dev_info_set, &dev_info_data, SPDRP_DEVICEDESC)
         {
             info.description = desc;
         }
@@ -173,7 +172,9 @@ fn get_device_instance_id(
     };
 
     if result == FALSE {
-        return Err(UsbIpError::Usb("SetupDiGetDeviceInstanceIdW failed".to_string()));
+        return Err(UsbIpError::from(ErrorKind::InvalidMessage(
+            "SetupDiGetDeviceInstanceIdW failed".to_string(),
+        )));
     }
 
     // Find the null terminator and convert
@@ -218,7 +219,9 @@ fn get_device_registry_string(
     };
 
     if result == FALSE {
-        return Err(UsbIpError::Usb("SetupDiGetDeviceRegistryPropertyW failed".to_string()));
+        return Err(UsbIpError::from(ErrorKind::InvalidMessage(
+            "SetupDiGetDeviceRegistryPropertyW failed".to_string(),
+        )));
     }
 
     // Registry strings are REG_SZ (null-terminated UTF-16LE)
@@ -267,6 +270,7 @@ fn parse_vid_pid_from_hardware_id(hw_id: &str, vid: &mut u16, pid: &mut u16) {
 
 /// Build a [`usbip_core::protocol::UsbIpDeviceEntry`] from a [`UsbDeviceInfo`].
 pub fn to_usbip_device_entry(info: &UsbDeviceInfo) -> usbip_core::protocol::UsbIpDeviceEntry {
+    use usbip_core::protocol::{U16BE, U32BE};
     usbip_core::protocol::UsbIpDeviceEntry {
         path: {
             let mut p = [0u8; 256];
@@ -284,21 +288,18 @@ pub fn to_usbip_device_entry(info: &UsbDeviceInfo) -> usbip_core::protocol::UsbI
             b[..len].copy_from_slice(&bytes[..len]);
             b
         },
-        busnum: 0,
-        devnum: 0,
-        speed: info.speed as u8,
-        id_vendor: info.vendor_id,
-        id_product: info.product_id,
-        bcd_device: 0,
+        busnum: U32BE::new(0),
+        devnum: U32BE::new(0),
+        speed: U32BE::new(info.speed),
+        id_vendor: U16BE::new(info.vendor_id),
+        id_product: U16BE::new(info.product_id),
+        bcd_device: U16BE::new(0),
         b_device_class: 0,
         b_device_sub_class: 0,
         b_device_protocol: 0,
         b_configuration_value: 0,
         b_num_configurations: 0,
-        b_interface_class: 0,
-        b_interface_sub_class: 0,
-        b_interface_protocol: 0,
-        _padding: [0u8; 3],
+        b_num_interfaces: 0,
     }
 }
 

@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "com.anyplug"
     compileSdk = 34
+    ndkVersion = "27.0.12077973"
 
     defaultConfig {
         applicationId = "com.anyplug"

@@ -166,13 +166,15 @@ fn run_server(
         require_confirmation,
         encryption_enabled,
         tcp_nodelay: true,
+        max_bandwidth: usbip_server::BandwidthLimit::unlimited(),
+        per_client_bandwidth: None,
     };
 
     let rt = tokio::runtime::Runtime::new()?;
-    rt.block_on(async {
+    Ok(rt.block_on(async {
         let server = usbip_server::Server::new(config).await?;
         server.run().await
-    })
+    })?)
 }
 
 // ---------------------------------------------------------------------------
@@ -195,12 +197,15 @@ fn run_client(
                 server_addr: None,
                 use_mdns: true,
                 auto_reconnect,
-                reconnect_attempts: if auto_reconnect { 10 } else { 0 },
-                reconnect_delay_ms: 2000,
+                reconnect: if auto_reconnect {
+                    usbip_client::ReconnectConfig::with_max_retries(10)
+                } else {
+                    usbip_client::ReconnectConfig::no_retry()
+                },
                 tcp_nodelay: true,
             })?;
 
-            let servers = client.discover_servers().await?;
+            let servers = client.discover_servers()?;
             if servers.is_empty() {
                 anyhow::bail!("No USB/IP servers discovered on the network");
             }
@@ -246,8 +251,11 @@ fn run_client(
                 server_addr: Some(addr),
                 use_mdns: false,
                 auto_reconnect,
-                reconnect_attempts: if auto_reconnect { 10 } else { 0 },
-                reconnect_delay_ms: 2000,
+                reconnect: if auto_reconnect {
+                    usbip_client::ReconnectConfig::with_max_retries(10)
+                } else {
+                    usbip_client::ReconnectConfig::no_retry()
+                },
                 tcp_nodelay: true,
             })?;
 
@@ -301,7 +309,7 @@ fn run_gui() -> anyhow::Result<()> {
 
     let app = AnyPlugApp::default();
 
-    eframe::run_native("AnyPlug", options, Box::new(|_cc| Ok(Box::new(app))))
+    eframe::run_native("AnyPlug", options, Box::new(|_cc| Box::new(app)))
         .map_err(|e| anyhow::anyhow!("GUI error: {e}"))
 }
 
@@ -427,6 +435,8 @@ impl AnyPlugApp {
                 require_confirmation: true,
                 encryption_enabled: false,
                 tcp_nodelay: true,
+                max_bandwidth: usbip_server::BandwidthLimit::unlimited(),
+                per_client_bandwidth: None,
             };
 
             let rt = tokio::runtime::Runtime::new().unwrap();
@@ -516,6 +526,8 @@ fn my_service_main(_arguments: Vec<std::ffi::OsString>) {
         require_confirmation: false,
         encryption_enabled: false,
         tcp_nodelay: true,
+        max_bandwidth: usbip_server::BandwidthLimit::unlimited(),
+        per_client_bandwidth: None,
     };
 
     let server_handle = std::thread::spawn(|| {
