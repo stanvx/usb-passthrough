@@ -49,17 +49,23 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Android SDK & NDK
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
+            "platforms;android-34" \
+            "build-tools;34.0.0" \
+            "ndk;27.0.12077973"
 
-      - name: Set up Android NDK
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r27c
-          local-cache: true
-
-      - name: Write local.properties
-        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+      - name: Verify NDK install
+        run: |
+          NDK_PATH="$ANDROID_HOME/ndk/27.0.12077973"
+          if [ ! -d "$NDK_PATH" ]; then
+            echo "::error::NDK not found at $NDK_PATH after sdkmanager install"
+            ls -la "$ANDROID_HOME/ndk/" 2>&1 || true
+            exit 1
+          fi
+          echo "NDK installed at $NDK_PATH"
+          echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
