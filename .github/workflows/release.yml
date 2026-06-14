@@ -2,8 +2,6 @@
 # Triggers on tags matching v* (e.g. v0.1.0, v1.2.3-beta).
 # Produces:
 #   • Linux x86_64   – native binary
-#   • Linux ARM64    – cross-compiled binary
-#   • Linux ARMv7    – cross-compiled binary
 #   • Windows EXE    – built on windows-latest with MSVC toolchain
 #   • Android APK    – phone release build
 #   • Android TV APK – TV release build
@@ -36,7 +34,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install system dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libusb-1.0-0-dev libglib2.0-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libusb-1.0-0-dev
 
       - name: Build release binaries
         run: cargo build --release -p usbip-server -p usbip-client
@@ -55,90 +53,12 @@ jobs:
           path: artifacts/*
           if-no-files-found: error
 
-  # ── Linux ARM64 ───────────────────────────────────────────────
-  linux-arm64:
-    name: Linux (ARM64)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust (ARM64 target)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
-
-      - name: Install cross-compilation dependencies
-        run: |
-          sudo dpkg --add-architecture arm64
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            gcc-aarch64-linux-gnu \
-            libusb-1.0-0-dev:arm64
-
-      - name: Build release binaries
-        run: |
-          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-          cargo build --release --target aarch64-unknown-linux-gnu \
-            -p usbip-server -p usbip-client
-
-      - name: Collect binaries
-        run: |
-          mkdir -p artifacts
-          cp target/aarch64-unknown-linux-gnu/release/usbip-server artifacts/usbip-server-arm64
-          cp target/aarch64-unknown-linux-gnu/release/usbip-client artifacts/usbip-client-arm64
-          ls -lh artifacts/
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: anyplug-linux-arm64
-          path: artifacts/*
-          if-no-files-found: error
-
-  # ── Linux ARMv7 ───────────────────────────────────────────────
-  linux-armv7:
-    name: Linux (ARMv7)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust (ARMv7 target)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: armv7-unknown-linux-gnueabihf
-
-      - name: Install cross-compilation dependencies
-        run: |
-          sudo dpkg --add-architecture armhf
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            gcc-arm-linux-gnueabihf \
-            libusb-1.0-0-dev:armhf
-
-      - name: Build release binaries
-        run: |
-          export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=arm-linux-gnueabihf-gcc
-          cargo build --release --target armv7-unknown-linux-gnueabihf \
-            -p usbip-server -p usbip-client
-
-      - name: Collect binaries
-        run: |
-          mkdir -p artifacts
-          cp target/armv7-unknown-linux-gnueabihf/release/usbip-server artifacts/usbip-server-armv7
-          cp target/armv7-unknown-linux-gnueabihf/release/usbip-client artifacts/usbip-client-armv7
-          ls -lh artifacts/
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: anyplug-linux-armv7
-          path: artifacts/*
-          if-no-files-found: error
-
   # ── Windows x86_64 ────────────────────────────────────────────
   windows:
     name: Windows (x86_64 EXE)
     runs-on: windows-latest
+    env:
+      RUSTFLAGS: -A dead_code -A unused_variables -A unexpected_cfgs
     defaults:
       run:
         shell: powershell
@@ -179,6 +99,10 @@ jobs:
   android:
     name: Android (Phone APK + TV APK)
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_COMPILE_SDK: 34
+      ANDROID_BUILD_TOOLS: 34.0.0
     steps:
       - uses: actions/checkout@v4
 
@@ -188,12 +112,12 @@ jobs:
           java-version: "17"
           distribution: "temurin"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK and configure SDK paths
+      - name: Install Android SDK components
         run: |
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install "ndk;27.0.12077973"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;27.0.12077973"
           echo "sdk.dir=$ANDROID_HOME" > android/local.properties
           echo "ndk.dir=$ANDROID_HOME/ndk/27.0.12077973" >> android/local.properties
 
@@ -224,8 +148,6 @@ jobs:
     name: Publish Release
     needs:
       - linux-x86_64
-      - linux-arm64
-      - linux-armv7
       - windows
       - android
     runs-on: ubuntu-latest
@@ -271,12 +193,6 @@ jobs:
 
             if [ -d "artifacts/anyplug-linux-x86_64" ]; then
               echo "| Linux | x86_64 | usbip-server, usbip-client |"
-            fi
-            if [ -d "artifacts/anyplug-linux-arm64" ]; then
-              echo "| Linux | ARM64 | usbip-server-arm64, usbip-client-arm64 |"
-            fi
-            if [ -d "artifacts/anyplug-linux-armv7" ]; then
-              echo "| Linux | ARMv7 | usbip-server-armv7, usbip-client-armv7 |"
             fi
             if [ -d "artifacts/anyplug-windows-x86_64" ]; then
               echo "| Windows | x86_64 | anyplug.exe |"
