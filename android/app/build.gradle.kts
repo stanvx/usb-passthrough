@@ -9,6 +9,12 @@ android {
     compileSdk = 34
     ndkVersion = "27.0.12077973"
 
+    // Disable AAPT2 cruncher — AAPT2 8.2.0 daemon crashes with
+    // "Unexpected error during link" during PNG processing on CI.
+    aaptOptions {
+        cruncherEnabled = false
+    }
+
     defaultConfig {
         applicationId = "com.anyplug"
         minSdk = 28  // Android 9 — USB Host API mature
