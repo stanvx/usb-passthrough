@@ -33,9 +33,7 @@ anyhow = "1"
 windows-service = "0.7"
 
 # Win32 API (SetupAPI, WinUSB)
-[dependencies.winapi]
-version = "0.3"
-features = [
+winapi = { version = "0.3", features = [
     "setupapi",
     "winusb",
     "ioapiset",
@@ -50,7 +48,7 @@ features = [
     "ntdef",
     "minwindef",
     "lmapibuf",
-]
+] }
 
 # GUI
 eframe = { version = "0.27", features = ["default"] }
@@ -60,7 +58,7 @@ egui-wgpu = "0.27"
 # System tray
 tray-icon = "0.17"
 
-# IPC channel (for tray ↔ service communication)
+# IPC channel (for tray <-> service communication)
 crossbeam-channel = "0.5"
 
 # Configuration

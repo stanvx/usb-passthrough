@@ -19,6 +19,7 @@ on:
   workflow_dispatch:
 
 env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
   ANDROID_COMPILE_SDK: 34
   ANDROID_BUILD_TOOLS: 34.0.0
   ANDROID_CMDLINE_TOOLS: 11076708
@@ -39,14 +40,16 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        - uses: actions/setup-java@v4
-          with:
-            distribution: temurin
-            java-version: 17
+      - name: Set up Android SDK & NDK
+        run: |
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --install \
+            "platforms;android-${ANDROID_COMPILE_SDK}" \
+            "build-tools;${ANDROID_BUILD_TOOLS}" \
+            "ndk;27.0.12077973" \
+            > /dev/null
 
-        - name: Grant execute permission for gradlew
-          run: chmod +x android/gradlew
+      - name: Grant execute permission for gradlew
+        run: chmod +x android/gradlew
 
       - name: Cache Gradle dependencies
         uses: actions/cache@v4
