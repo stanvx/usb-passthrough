@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use usbip_core::error::UsbIpResult;
-use usbip_server::{Server, ServerConfig};
+use usbip_server::{metrics, BandwidthLimit, Server, ServerConfig};
 
 #[derive(Parser)]
 #[command(name = "usbip-server")]
@@ -32,6 +32,10 @@ struct Cli {
     /// Enable AES-256-GCM encryption
     #[arg(long)]
     encrypt: bool,
+
+    /// Prometheus metrics port (if set, serves /metrics on this port)
+    #[arg(long)]
+    metrics_port: Option<u16>,
 }
 
 #[derive(Subcommand)]
@@ -66,9 +70,31 @@ async fn main() -> UsbIpResult<()> {
         require_confirmation: !cli.no_confirm,
         encryption_enabled: cli.encrypt,
         tcp_nodelay: true,
+        max_bandwidth: BandwidthLimit::unlimited(),
+        per_client_bandwidth: None,
     };
 
-    let server = Server::new(config).await?;
+    let server = Server::new(config.clone()).await?;
+
+    // Set encryption metric
+    if cli.encrypt {
+        metrics::ENCRYPTION_ENABLED.set(1);
+    }
+
+    // Start the Prometheus metrics server if a port was specified
+    if let Some(metrics_port) = cli.metrics_port {
+        let metrics_addr = format!("{}:{}", config.bind_address, metrics_port);
+        let metrics_router = metrics::build_metrics_router();
+        let metrics_listener = tokio::net::TcpListener::bind(&metrics_addr).await?;
+        tracing::info!("Prometheus metrics listening on {}", metrics_addr);
+        tokio::spawn(async move {
+            axum::serve(metrics_listener, metrics_router)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::error!("Metrics server error: {}", e);
+                });
+        });
+    }
 
     match cli.command {
         Some(Commands::List) => {

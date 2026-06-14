@@ -38,6 +38,7 @@ utoipa = { version = "5", features = ["axum_extras"] }
 utoipa-swagger-ui = { version = "9", features = ["axum"] }
 chrono = { workspace = true }
 tower = { workspace = true }
+prometheus = { version = "0.13", features = ["process"] }
 
 [dev-dependencies]
 criterion.workspace = true

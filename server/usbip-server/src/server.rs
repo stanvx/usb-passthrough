@@ -32,9 +32,9 @@ use usbip_core::protocol::{
     STATUS_ST_DEV_BUSY, USBIP_CMD_SUBMIT,
 };
 use usbip_core::urb::UsbIpCmdSubmit;
-use usbip_core::USBIP_PORT;
 
 use crate::api;
+use crate::bandwidth::BandwidthLimit;
 use crate::batcher::UrbBatcher;
 use crate::discovery::MdnsAdvertiser;
 use crate::urb_executor::UrbExecutor;
@@ -60,17 +60,23 @@ pub struct ServerConfig {
     pub require_confirmation: bool,
     pub encryption_enabled: bool,
     pub tcp_nodelay: bool,
+    /// Global default bandwidth limit (0 = unlimited).
+    pub max_bandwidth: BandwidthLimit,
+    /// Per-client bandwidth override (0 = use global default).
+    pub per_client_bandwidth: Option<BandwidthLimit>,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
-            bind_address: "0.0.0.0".to_string(),
-            port: USBIP_PORT,
+            bind_address: "0.0.0.0".into(),
+            port: 3240,
             allowed_vid_pid: Vec::new(),
             require_confirmation: true,
             encryption_enabled: false,
             tcp_nodelay: true,
+            max_bandwidth: BandwidthLimit::unlimited(),
+            per_client_bandwidth: None,
         }
     }
 }
