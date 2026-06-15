@@ -17,9 +17,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.anyplug.ui.DiscoveredServer
-import com.anyplug.ui.LocalUsbDevice
-import com.anyplug.ui.RemoteDevice
+import com.anyplug.model.DiscoveredServer
+import com.anyplug.model.LocalUsbDevice
+import com.anyplug.model.RemoteDevice
 
 /**
  * TV-optimized Leanback-style main screen for AnyPlug.
