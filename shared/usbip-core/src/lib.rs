@@ -17,6 +17,7 @@ pub mod descriptor;
 pub mod error;
 pub mod pool;
 pub mod protocol;
+pub mod reply;
 pub mod urb;
 
 pub use crypto::*;
@@ -60,6 +61,9 @@ pub use urb::UsbIpCmdSubmit;
 pub use urb::UsbIpMessage;
 pub use urb::UsbIpRetSubmit;
 pub use urb::UsbIpRetUnlink;
+
+pub use reply::serialize_reply;
+pub use reply::serialize_reply_into;
 
 /// Default USB/IP TCP port (IANA-registered).
 pub const USBIP_PORT: u16 = 3240;
