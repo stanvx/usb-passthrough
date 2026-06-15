@@ -4,7 +4,7 @@
 #   • Linux x86_64       – native binary
 #   • Windows EXE        – built on windows-latest with MSVC toolchain
 #   • Android Phone APK  – release build (required)
-#   • Android TV APK     – release build (experimental, non-blocking)
+#   • Android TV APK     – release build (non-blocking; included when build succeeds)
 # Auto-generates changelog from conventional commits since previous tag.
 # All artifacts uploaded to a single GitHub Release.
 # ────────────────────────────────────────────────────────────────────
@@ -220,6 +220,7 @@ jobs:
       - linux-x86_64
       - windows
       - android-phone
+      - android-tv
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

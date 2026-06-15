@@ -4,8 +4,6 @@ import android.content.Intent
 import android.media.tv.TvInputService
 import android.net.Uri
 import android.view.Surface
-import android.view.SurfaceHolder
-import android.view.SurfaceView
 
 /**
  * TvInputService that registers AnyPlug as a TV input source.
@@ -33,30 +31,10 @@ class AnyPlugTvInputService : TvInputService() {
      */
     inner class AnyPlugSession(context: AnyPlugTvInputService) : Session(context) {
 
-        private var surfaceView: SurfaceView? = null
         private var currentSurface: Surface? = null
 
-        override fun onCreate(overlayView: SurfaceView?) {
-            surfaceView = overlayView
-            overlayView?.holder?.addCallback(object : SurfaceHolder.Callback {
-                override fun surfaceCreated(holder: SurfaceHolder) {
-                    currentSurface = holder.surface
-                }
-
-                override fun surfaceChanged(
-                    holder: SurfaceHolder,
-                    format: Int,
-                    width: Int,
-                    height: Int
-                ) {
-                    currentSurface = holder.surface
-                    // TODO: reconfigure video pipeline for new dimensions
-                }
-
-                override fun surfaceDestroyed(holder: SurfaceHolder) {
-                    currentSurface = null
-                }
-            })
+        override fun onSetCaptionEnabled(enabled: Boolean) {
+            // Captions not yet supported; no-op for now
         }
 
         override fun onSetSurface(surface: Surface?): Boolean {
@@ -79,7 +57,6 @@ class AnyPlugTvInputService : TvInputService() {
 
         override fun onRelease() {
             currentSurface = null
-            surfaceView = null
         }
 
         override fun onAppPrivateCommand(action: String, data: android.os.Bundle?) {
