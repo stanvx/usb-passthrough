@@ -128,15 +128,28 @@ jobs:
             "platforms;android-${ANDROID_COMPILE_SDK}" \
             "build-tools;${ANDROID_BUILD_TOOLS}" \
             "ndk;27.0.12077973"
+          if [ ! -d "$ANDROID_SDK_ROOT/platforms/android-${ANDROID_COMPILE_SDK}" ]; then
+            echo "::error::platforms android-${ANDROID_COMPILE_SDK} not found"
+            ls -la "$ANDROID_SDK_ROOT/platforms/" 2>&1 || true
+            exit 1
+          fi
+          echo "platforms android-${ANDROID_COMPILE_SDK} installed OK"
+          NDK_PATH=$(ls -d "$ANDROID_SDK_ROOT/ndk/"* 2>/dev/null | head -1)
+          if [ -z "$NDK_PATH" ] || [ ! -d "$NDK_PATH" ]; then
+            echo "::error::NDK not found after install"
+            ls -la "$ANDROID_SDK_ROOT/ndk/" 2>&1 || true
+            exit 1
+          fi
+          echo "NDK installed at $NDK_PATH"
           echo "sdk.dir=$ANDROID_SDK_ROOT" > android/local.properties
-          echo "ndk.dir=$ANDROID_SDK_ROOT/ndk/27.0.12077973" >> android/local.properties
-          ls -d "$ANDROID_SDK_ROOT/platforms/android-${ANDROID_COMPILE_SDK}" || echo "::warning::platforms not found"
-          ls -d "$ANDROID_SDK_ROOT/ndk/27.0.12077973" || echo "::warning::NDK not found"
+          echo "ndk.dir=$NDK_PATH" >> android/local.properties
 
       - name: Build phone release APK
+        env:
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           chmod +x android/gradlew
-          export ANDROID_HOME=/usr/local/lib/android/sdk
           cd android && ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Upload phone APK
@@ -186,9 +199,11 @@ jobs:
           ls -d "$ANDROID_SDK_ROOT/ndk/27.0.12077973" || echo "::warning::NDK not found"
 
       - name: Build TV release APK
+        env:
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
           chmod +x android/gradlew
-          export ANDROID_HOME=/usr/local/lib/android/sdk
           cd android && ./gradlew :tv:assembleRelease --no-daemon --stacktrace
 
       - name: Upload TV APK
