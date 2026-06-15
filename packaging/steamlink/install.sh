@@ -178,7 +178,7 @@ port = 3240
 announce-mdns = true
 
 # To allowlist specific devices, uncomment and add VID:PID pairs:
-#   allow-device = 046d:c242   # Logitech G920
+#   allow-device = 046d:c261   # Example: allow a specific device
 #   allow-device = 054c:09cc   # Sony DualShock 4
 #   allow-device = 045e:028e   # Xbox 360 Controller
 CONFEOF

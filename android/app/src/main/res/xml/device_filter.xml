@@ -2,25 +2,25 @@
 <resources>
     <!--
     USB device filter for auto-launch when a matching device is connected.
-    Include known racing wheel VID:PID pairs.
+    Include known USB game controller VID:PID pairs (reference examples).
     -->
 
-    <!-- Logitech G920 (Xbox mode) -->
+    <!-- Example: racing wheel (Xbox mode) -->
     <usb-device vendor-id="1133" product-id="49761" /> <!-- 0x046d:0xc261 -->
 
-    <!-- Logitech G920 (PS4 mode) -->
+    <!-- Example: racing wheel (PS4 mode) -->
     <usb-device vendor-id="1133" product-id="49762" /> <!-- 0x046d:0xc262 -->
 
-    <!-- Logitech G29 -->
+    <!-- Example: racing wheel -->
     <usb-device vendor-id="1133" product-id="49747" /> <!-- 0x046d:0xc24f -->
 
-    <!-- Logitech G923 (Xbox) -->
+    <!-- Example: racing wheel -->
     <usb-device vendor-id="1133" product-id="49771" /> <!-- 0x046d:0xc26b -->
 
-    <!-- Thrustmaster T300RS -->
+    <!-- Example: racing wheel -->
     <usb-device vendor-id="1103" product-id="46600" /> <!-- 0x044f:0xb660 -->
 
-    <!-- Fanatec CSL Elite -->
+    <!-- Example: racing wheel -->
     <usb-device vendor-id="5083" product-id="4644" />  <!-- 0x13d3:0x1224 -->
 
     <!-- Generic USB HID devices (allow all for development) -->

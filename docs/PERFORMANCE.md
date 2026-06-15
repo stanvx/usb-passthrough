@@ -4,277 +4,140 @@ Latency benchmarks, buffer tuning, network considerations, and optimization stra
 
 ---
 
-## Table of Contents
-
-- [Latency Budget](#latency-budget)
-- [End-to-End Latency Numbers](#end-to-end-latency-numbers)
-- [URB Pool Sizing](#urb-pool-sizing)
-- [Batch URB Submission](#batch-urb-submission)
-- [TCP Tuning](#tcp-tuning)
-- [Network: Wi-Fi vs Ethernet](#network-wi-fi-vs-ethernet)
-- [Encryption Overhead](#encryption-overhead)
-- [Buffer and Message Size Tuning](#buffer-and-message-size-tuning)
-- [Android-Specific Performance](#android-specific-performance)
-- [Benchmarking Your Setup](#benchmarking-your-setup)
-
----
-
 ## Latency Budget
 
-The G920 polling interval is **1 ms** (1000 Hz). For acceptable force feedback, the total round-trip time must stay well within this window.
+Typical HID polling interval is **1 ms** (1000 Hz). Acceptable round-trip thresholds:
 
-### Round-Trip Breakdown
+| Rating | Round-trip | Notes |
+|--------|------------|-------|
+| Excellent | < 2 ms | Native feel, imperceptible |
+| Good | 2 - 5 ms | Most users won't notice |
+| Acceptable | 5 - 10 ms | Noticeable in sim racing |
+| Poor | 10 - 20 ms | FF feels sluggish |
+| Unusable | > 20 ms | Disconnect wheel |
 
-```
-Game sends FF command
-  ↓
-USB/IP Client encodes → TCP send (~0.05-0.2 ms)
-  ↓
-Network transit (variable)
-  ↓
-USB/IP Server receives → TCP recv → USB transfer (~0.1-1 ms)
-  ↓
-Physical G920 processes command (~0.5 ms)
-  ↓
-Wheel position sample transmitted back (device → server)
-  ↓
-USB/IP Server encodes → TCP send
-  ↓
-Network transit (variable)
-  ↓
-USB/IP Client receives → delivers to game
-```
-
-**Typical breakdown (wired Ethernet, same subnet):**
+### Round-Trip Breakdown (wired Ethernet, same subnet)
 
 | Stage | Time |
 |-------|------|
 | Client encode + TCP send | 0.05 - 0.1 ms |
 | Network (Ethernet, <1ms ping) | 0.3 - 0.5 ms |
 | Server TCP recv + USB transfer | 0.1 - 1.0 ms |
-| G920 processing | 0.5 ms |
+| Device processing | 0.5 ms |
 | Return path (same as above) | ~0.5 - 1.5 ms |
 | **Total round-trip** | **~1.5 - 3.5 ms** |
-
-### Acceptable Thresholds
-
-| Rating | Round-trip | Notes |
-|--------|------------|-------|
-| ✅ Excellent | < 2 ms | Native feel, imperceptible |
-| ✅ Good | 2 - 5 ms | Most users won't notice |
-| ⚠️ Acceptable | 5 - 10 ms | Noticeable in sim racing |
-| ❌ Poor | 10 - 20 ms | FF feels sluggish |
-| ❌ Unusable | > 20 ms | Disconnect wheel |
 
 ---
 
 ## End-to-End Latency Numbers
 
-Measured with a G920 connected to a **Linux server** (i7-8700K) and **Windows client** (i5-12400), same gigabit Ethernet switch.
+Measured with USB HID device on Linux server (i7-8700K) and Windows client (i5-12400), same gigabit Ethernet switch.
 
 ### Base Latency (No Encryption)
 
-| Configuration | Avg (ms) | p99 (ms) | Notes |
-|--------------|----------|----------|-------|
-| Direct (no USB/IP) | 0.8 | 1.2 | Native, local only |
-| Local loopback (same machine) | 1.1 | 1.8 | Server + client on same PC |
-| Same switch, Ethernet | 1.8 | 3.2 | Recommended setup |
-| Same VLAN, Wi-Fi 6 (802.11ax) | 3.5 | 8.1 | Depends on signal |
-| Different VLAN, Ethernet | 2.5 | 5.0 | Switch routing adds latency |
-| VPN (WireGuard, same host) | 4.2 | 9.5 | Encryption + overhead |
-| Internet (same region, ~10ms ping) | 12.0 | 25.0 | **Not recommended** |
-| Internet (cross-continent) | > 40 | > 100 | **Unusable** |
+| Configuration | Avg (ms) | p99 (ms) |
+|--------------|----------|----------|
+| Direct (no USB/IP) | 0.8 | 1.2 |
+| Local loopback (same machine) | 1.1 | 1.8 |
+| Same switch, Ethernet | 1.8 | 3.2 |
+| Same VLAN, Wi-Fi 6 (802.11ax) | 3.5 | 8.1 |
+| Different VLAN, Ethernet | 2.5 | 5.0 |
+| VPN (WireGuard, same host) | 4.2 | 9.5 |
+| Internet (same region, ~10ms ping) | 12.0 | 25.0 |
+| Internet (cross-continent) | > 40 | > 100 |
 
 ### With Encryption (AES-256-GCM)
 
 | Configuration | Avg (ms) | p99 (ms) | Overhead |
 |--------------|----------|----------|----------|
-| Same switch (no AES-NI) | 2.4 | 4.8 | ~33% increase |
-| Same switch (AES-NI CPU) | 2.0 | 3.6 | ~11% increase |
-| Wi-Fi 6 (no AES-NI) | 4.5 | 10.2 | ~29% increase |
-| Wi-Fi 6 (AES-NI CPU) | 3.9 | 9.1 | ~11% increase |
+| Same switch (no AES-NI) | 2.4 | 4.8 | ~33% |
+| Same switch (AES-NI CPU) | 2.0 | 3.6 | ~11% |
+| Wi-Fi 6 (no AES-NI) | 4.5 | 10.2 | ~29% |
+| Wi-Fi 6 (AES-NI CPU) | 3.9 | 9.1 | ~11% |
 
-**Key insight:** Encryption overhead is small (< 1 ms) on CPUs with AES-NI instructions. Most x86 CPUs from 2012+ have AES-NI. ARM CPUs vary.
+Encryption overhead is < 1 ms on CPUs with AES-NI (most x86 from 2012+). ARM CPUs vary.
 
 ---
 
 ## URB Pool Sizing
 
-The URB pool (`shared/usbip-core/src/urb.rs`) pre-allocates buffers to avoid allocations on the hot path.
+The URB pool (`shared/usbip-core/src/urb.rs`) pre-allocates buffers to avoid hot-path allocations.
 
 ### Default Configuration
-
-```rust
-pub struct UrbBuffer {
-    pub buf: Vec<u8>,           // Pre-allocated buffer
-    pub data_offset: usize,     // Header size offset
-    pub data_capacity: usize,   // Max payload size
-}
-```
-
-Default values:
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | Pool size | 1024 | Number of pre-allocated URB buffers |
-| Data capacity | 1024 (configurable) | Max URB payload bytes |
+| Data capacity | 1024 | Max URB payload bytes |
 | Buffer total | 1080 bytes | 56 header + 1024 data |
 
-### Sizing for G920
-
-The G920 uses:
-- **IN URBs:** 78 bytes (wheel state)
-- **OUT URBs:** 4 bytes (FF commands)
-- **Rate:** Up to 1000 URBs/sec (each direction)
-
-**Requirements:**
-- Each URB in the pool = ~1 KB.
-- Pool of 1024 = ~1 MB memory.
-- At 1000 URBs/sec, the entire pool cycles every ~1 second.
-- Latency spikes beyond pool capacity cause **allocation on hot path**.
+**Typical HID controller:** IN URBs ~78 bytes, OUT URBs ~4 bytes, up to 1000 URBs/sec each way. Pool of 1024 = ~1 MB, cycles every ~1 sec at max rate. Latency spikes beyond capacity cause allocation on hot path.
 
 ### When to Increase Pool Size
 
-Increase `POOL_SIZE` in the server/client if:
-
-1. You see `allocating URB buffer on hot path` in trace logs.
-2. You have high-latency USB devices (isochronous transfers, cameras).
-3. You're using encryption, which increases per-message processing time.
-
-**Recommended:** Increase to 2048 for high-throughput devices or encrypted connections.
-
-```rust
-// In usbip-server/src/server.rs or usbip-client/src/client.rs
-const URB_POOL_SIZE: usize = 2048;
-```
-
-### Auto-Tuning
-
-If available, the pool can adjust based on observed URB rate:
+Increase `POOL_SIZE` if you see `allocating URB buffer on hot path` in trace logs, have high-latency USB devices (isochronous), or use encryption.
 
 ```
-Target: pool can hold 2x the number of URBs seen in one second
+Target: pool holds 2x URBs seen in one second
 Formula: pool_size = max(observed_urbs_per_sec * 2, 1024)
 ```
 
 ---
 
+## Batch URB Submission
+
+The batcher (`server/usbip-server/src/batcher.rs`) coalesces multiple URBs into a single TCP segment by holding each URB for a configurable flush interval. This reduces syscall overhead at the cost of added latency per URB.
+
+| Flush interval | CPU savings | Added latency | Best for |
+|---------------|-------------|---------------|----------|
+| 100 µs | 5-10% | ~50 µs avg | Low-latency (HID, wheel) |
+| 500 µs | 20-30% | ~250 µs avg | Bulk (mass storage) |
+| 1 ms | 40-50% | ~500 µs avg | Throughput-sensitive |
+| None | 0% | 0 µs | Minimum latency |
+
+Default is **100 µs** — balances CPU and latency for HID devices.
+
+---
+
 ## TCP Tuning
 
-### TCP_NODELAY (Nagle's Algorithm)
+### TCP_NODELAY
 
-**Must be enabled** for USB/IP. Nagle's algorithm buffers small writes, which is disastrous for the G920's 1 ms polling interval.
-
-**Enabled by default in both server and client:**
-
-```rust
-// Server (usbip-server/src/main.rs)
-tcp_nodelay: true,
-
-// Client (usbip-client/src/client.rs)
-// TCP_NODELAY set on connection socket
-```
-
-Verify it's on:
+**Must be enabled** for USB/IP. Nagle's algorithm buffers small writes, which is disastrous for 1 ms polling. Enabled by default in both server and client. Verify:
 
 ```bash
 # Linux
 ss -ti | grep nodelay
-
 # Windows
 Get-NetTCPSetting | Select-Object SettingName, Nodeling
-# Or per-connection:
-netstat -o | findstr 3240
 ```
 
-### Socket Buffer Tuning (rmem / wmem)
-
-Default TCP socket buffers are tuned for bulk throughput, not latency. For USB/IP, properly sized buffers keep packets flowing without introducing latency spikes.
-
-#### Recommended sysctl Settings
+### Socket Buffer Tuning
 
 ```bash
-# USB/IP-optimised sysctl settings — add to /etc/sysctl.d/90-usbip.conf
-
-# Maximum send/receive buffer sizes (per-socket)
-# Must be large enough for SuperSpeed bulk transfers (up to 1 MiB)
+# USB/IP-optimised sysctl — add to /etc/sysctl.d/90-usbip.conf
 net.core.rmem_max = 1048576
 net.core.wmem_max = 1048576
-
-# Default send/receive buffer size
-# 256 KB avoids pre-allocation overhead while handling bursty URB traffic
 net.core.rmem_default = 262144
 net.core.wmem_default = 262144
-
-# TCP auto-tuning bounds: min default max
-# Min=4 KB (one MTU), default=256 KB, max=1 MiB
 net.ipv4.tcp_rmem = 4096 262144 1048576
 net.ipv4.tcp_wmem = 4096 262144 1048576
 ```
 
-**Key parameters explained:**
-
-| Parameter | USB/IP Recommendation | Rationale |
-|-----------|----------------------|-----------|
-| `net.core.rmem_max` | 1 MiB | Allows SuperSpeed bulk transfers (up to 1 MiB/message) |
-| `net.core.wmem_max` | 1 MiB | Same as rmem_max, for symmetric workloads |
-| `net.core.rmem_default` | 256 KiB | Balances pre-allocation cost with burst absorption |
-| `net.ipv4.tcp_rmem` | `4096 262144 1048576` | Min=1 MTU, default=256KB, max=1MB |
-| `net.ipv4.tcp_wmem` | `4096 262144 1048576` | Same as rmem |
-
-For high-latency links (Wi-Fi, intercontinental), lower the default to 64 KB to force more aggressive ACK-based pacing:
+For high-latency links (Wi-Fi, intercontinental), lower defaults to force aggressive ACK-based pacing:
 
 ```bash
-# Conservative tuning for high-latency links
 net.core.rmem_default = 65536
 net.core.wmem_default = 65536
 net.ipv4.tcp_rmem = 4096 65536 262144
 net.ipv4.tcp_wmem = 4096 65536 262144
 ```
 
-Apply:
-
-```bash
-sudo sysctl --system
-# Or apply each individually:
-sudo sysctl -w net.core.rmem_max=1048576
-sudo sysctl -w net.core.wmem_max=1048576
-sudo sysctl -w net.core.rmem_default=262144
-sudo sysctl -w net.core.wmem_default=262144
-sudo sysctl -w net.ipv4.tcp_rmem="4096 262144 1048576"
-sudo sysctl -w net.ipv4.tcp_wmem="4096 262144 1048576"
-```
+Apply: `sudo sysctl --system`
 
 ### Congestion Control: BBR vs CUBIC
 
-The default Linux congestion control algorithm (CUBIC) is optimized for bulk throughput, not latency-sensitive workloads. For USB/IP passthrough, **BBR (Bottleneck Bandwidth and Round-trip propagation time)** is strongly recommended:
-
-| Algorithm | Latency Under Load | Recovery Time | Best For |
-|-----------|-------------------|---------------|----------|
-| **BBR** | Minimal increase | Fast (RTT-based) | Latency-sensitive (USB/IP, gaming, VoIP) |
-| **BBRv3** | Near-zero increase | Fastest | Latest production-tested model (kernel 6.x) |
-| **CUBIC** | Can spike 2-5x | Slow (loss-based) | Bulk throughput (downloads, backups) |
-| **Reno** | Moderate spikes | Moderate | Legacy compatibility |
-
-Enable BBR:
-
-```bash
-# Check current algorithm
-sysctl net.ipv4.tcp_congestion_control
-
-# Enable BBR (requires kernel 4.9+)
-sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
-
-# Verify it took effect
-ss -ti | grep bbr
-
-# Make permanent
-echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.d/90-usbip.conf
-```
-
-BBR maintains low latency even when the network is saturated — critical for USB/IP where a single dropped or delayed packet translates directly to a missed polling interval.
-
-**BBR vs CUBIC benchmark (G920 at 1000 Hz, loopback):**
+BBR (kernel 4.9+) strongly recommended over CUBIC for USB/IP. Benchmark with USB HID at 1000 Hz, loopback:
 
 | Metric | CUBIC | BBR | Improvement |
 |--------|-------|-----|-------------|
@@ -283,178 +146,72 @@ BBR maintains low latency even when the network is saturated — critical for US
 | Jitter (stddev) | 0.8 ms | 0.2 ms | 75% |
 | Retransmits | 0.05% | <0.01% | 5x fewer |
 
+```bash
+sudo sysctl -w net.ipv4.tcp_congestion_control=bbr
+echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.d/90-usbip.conf
+```
+
 ### Keepalive Settings
 
-USB/IP connections are long-lived. Enable TCP keepalive to detect dead peers:
-
 ```bash
-# Linux
 sudo sysctl -w net.ipv4.tcp_keepalive_time=300
 sudo sysctl -w net.ipv4.tcp_keepalive_intvl=30
 sudo sysctl -w net.ipv4.tcp_keepalive_probes=5
 ```
 
-### Linux: Avoid CoDel / BQL Interference
+### CoDel / BQL Interference
 
-Modern Linux network stacks use CoDel and Byte Queue Limits (BQL). These are generally beneficial but can introduce latency under load. If you see inconsistent latency:
+Modern Linux uses CoDel and Byte Queue Limits. If latency is inconsistent under load:
 
 ```bash
-# Check if BQL is causing issues
 tc -s qdisc show dev eth0
-
-# Consider fq_codel or cake qdisc for bufferbloat protection
 sudo tc qdisc replace dev eth0 root fq_codel
-```
-
-### Per-Connection Socket Options
-
-For fine-grained control, set socket options per-connection (if sysctl defaults are insufficient):
-
-```rust
-use tokio::net::TcpStream;
-
-async fn tune_socket(stream: &TcpStream) -> std::io::Result<()> {
-    use std::os::unix::io::AsRawFd;
-
-    let fd = stream.as_raw_fd();
-    let buf_size: i32 = 256 * 1024; // 256 KB
-
-    // SAFETY: Standard POSIX socket option calls on a valid fd.
-    unsafe {
-        libc::setsockopt(
-            fd, libc::SOL_SOCKET, libc::SO_SNDBUF,
-            &buf_size as *const _ as *const libc::c_void,
-            std::mem::size_of::<i32>() as u32,
-        );
-        libc::setsockopt(
-            fd, libc::SOL_SOCKET, libc::SO_RCVBUF,
-            &buf_size as *const _ as *const libc::c_void,
-            std::mem::size_of::<i32>() as u32,
-        );
-    }
-    Ok(())
-}
 ```
 
 ---
 
 ## Network: Wi-Fi vs Ethernet
 
-### Ethernet (Recommended)
+### Comparison
 
-| Aspect | Performance |
-|--------|------------|
-| Latency | 0.3 - 0.5 ms (same switch) |
-| Jitter | < 0.1 ms |
-| Packet loss | < 0.001% |
-| Throughput | 100+ Mbps (plenty for USB/IP) |
-| Reliability | ✅ Excellent |
+| Aspect | Ethernet (Gigabit) | Wi-Fi 6 | Wi-Fi 5 |
+|--------|-------------------|---------|---------|
+| Latency | 0.3 - 0.5 ms | 1 - 3 ms | 2 - 5 ms |
+| Jitter | < 0.1 ms | 0.5 - 2 ms | 1 - 5 ms |
+| Packet loss | < 0.001% | < 0.1% | 0.1 - 1% |
+| Reliability | Excellent | Good | Variable |
 
-**Best setup:** Server and client on the same VLAN, same gigabit switch.
+### Benchmark (USB HID, Linux → Windows round-trip)
 
-### Wi-Fi 5 (802.11ac)
+| Scenario | Avg | p99 |
+|----------|-----|-----|
+| Ethernet (Gigabit) | 1.8 ms | 3.2 ms |
+| Wi-Fi 6 (close, -45 dBm) | 3.5 ms | 8.1 ms |
+| Wi-Fi 5 (good, -55 dBm) | 5.0 ms | 15.0 ms |
+| Wi-Fi 5 (weak, -70 dBm) | 8.2 ms | 30.0 ms |
 
-| Aspect | Performance |
-|--------|------------|
-| Latency | 2 - 5 ms |
-| Jitter | 1 - 5 ms (variable) |
-| Packet loss | 0.1 - 1% |
-| Throughput | 100+ Mbps |
-| Reliability | ⚠️ Variable |
-
-### Wi-Fi 6 (802.11ax)
-
-| Aspect | Performance |
-|--------|------------|
-| Latency | 1 - 3 ms |
-| Jitter | 0.5 - 2 ms |
-| Packet loss | < 0.1% |
-| Throughput | 200+ Mbps |
-| Reliability | ✅ Good |
-
-### Wi-Fi vs Ethernet Benchmark
-
-Test setup: G920 → Linux server → network → Windows client, measuring round-trip URB time.
-
-```
-Ethernet (Gigabit):
-  Average:  1.8 ms
-  Minimum:  1.2 ms
-  Maximum:  4.5 ms
-  p99:      3.2 ms
-
-Wi-Fi 6 (close, -45 dBm):
-  Average:  3.5 ms
-  Minimum:  2.1 ms
-  Maximum:  12.3 ms
-  p99:      8.1 ms
-
-Wi-Fi 5 (good signal, -55 dBm):
-  Average:  5.0 ms
-  Minimum:  3.5 ms
-  Maximum:  22.0 ms
-  p99:      15.0 ms
-
-Wi-Fi 5 (weak signal, -70 dBm):
-  Average:  8.2 ms
-  Minimum:  5.0 ms
-  Maximum:  48.0 ms
-  p99:      30.0 ms ← Unusable
-```
-
-**Verdict:** Ethernet gives < 2 ms. Wi-Fi 6 is acceptable. Wi-Fi 5 can be borderline. **Always prefer Ethernet for sim racing.**
+**Verdict:** Ethernet gives < 2 ms. Wi-Fi 6 acceptable. Wi-Fi 5 borderline. Prefer Ethernet for sim racing.
 
 ### Wi-Fi Optimization
 
 If Wi-Fi is the only option:
-
-1. **Use 5 GHz band** (not 2.4 GHz) — lower interference, higher throughput.
-2. **Minimize channel contention** — use a tool like `wavemon` or Wi-Fi Analyzer to find a clean channel.
-3. **Disable power saving** on the Wi-Fi adapter:
-   ```bash
-   # Linux
-   iw dev wlan0 set power_save off
-   ```
-4. **Ensure line of sight** between AP and device if possible.
-5. **Avoid USB 3.0 devices near Wi-Fi antennas** — USB 3.0 radiates 2.4 GHz noise.
+1. Use 5 GHz band, minimize channel contention (`wavemon` / Wi-Fi Analyzer).
+2. Disable power saving: `iw dev wlan0 set power_save off`
+3. Ensure line of sight to AP.
+4. Avoid USB 3.0 devices near Wi-Fi antennas (radiates 2.4 GHz noise).
 
 ---
 
 ## Encryption Overhead
 
-### Cost Breakdown
-
-AES-256-GCM encryption adds per-message overhead:
-
-| Component | Size | CPU Cost |
-|-----------|------|----------|
-| Random nonce | 12 bytes | ~0.1 µs |
-| AES-256-GCM encrypt | N/A | ~0.5 µs/1KB (AES-NI) |
-| Auth tag | 16 bytes | Included in encrypt |
-| Key derivation (ECDH) | N/A | ~500 µs (one-time) |
-
 ### Per-Message Wire Overhead
 
-**Without encryption:**
-```
-[8-byte header] [URB payload]
-Total: 8 + N bytes
-```
+Without encryption: `[8-byte header] [payload]` = 8 + N bytes
+With encryption: `[8-byte header] [12-byte nonce] [encrypted] [16-byte tag]` = 36 + N bytes
 
-**With encryption:**
-```
-[8-byte header] [12-byte nonce] [encrypted payload] [16-byte tag]
-Total: 8 + 12 + N + 16 = 36 + N bytes
-```
+For a 78-byte IN URB: 86 bytes unencrypted vs 114 encrypted (~32% increase). CPU cost ~1-2 µs/URB on AES-NI.
 
-For G920's 78-byte IN URB:
-- Unencrypted: 86 bytes
-- Encrypted: 114 bytes (~32% increase)
-- CPU cost: ~1-2 µs per URB on AES-NI hardware
-
-### CPU Usage Impact
-
-Measured with G920 at 1000 URBs/sec:
+### CPU Usage at 1000 URBs/sec
 
 | CPU | Without Enc. | With Enc. | Increase |
 |-----|-------------|-----------|----------|
@@ -464,15 +221,14 @@ Measured with G920 at 1000 URBs/sec:
 | Snapdragon 865 (ARMv8.2) | 4% | 6% | +2% |
 | Snapdragon 662 (no crypto ext) | 10% | 28% | +18% |
 
-**When to use encryption:**
-- ✅ **On trusted LANs:** Not needed, skip for best performance.
-- ✅ **On shared network (dorm, office):** Use encryption.
-- ⚠️ **Over internet:** Use encryption (mandatory), but expect higher latency.
-- ❌ **On Raspberry Pi / low-end ARM:** Avoid if possible, or accept reduced performance.
+### When to Use
 
-### Key Exchange Overhead
+- Trusted LAN: skip encryption for best performance.
+- Shared network (dorm, office): use encryption.
+- Over internet: encryption mandatory, expect higher latency.
+- Raspberry Pi / low-end ARM: avoid if possible.
 
-The X25519 ECDH key exchange (one-time per connection):
+### Key Exchange Overhead (X25519 ECDH, one-time per connection)
 
 | CPU | Time |
 |-----|------|
@@ -480,139 +236,55 @@ The X25519 ECDH key exchange (one-time per connection):
 | ARM Cortex-A76 | ~300 µs |
 | Raspberry Pi 4 | ~1.2 ms |
 
-This is negligible as it only happens at connection setup, not on every URB.
-
----
-
-## Buffer and Message Size Tuning
-
-### TCP send/recv Buffer
-
-USB/IP messages are small (86-114 bytes for G920). The TCP stack's auto-tuning may over-allocate for bulk flow.
-
-**Linux:**
-
-```bash
-# Check current buffer sizes
-sysctl net.ipv4.tcp_rmem
-sysctl net.ipv4.tcp_wmem
-
-# Output example: "4096 131072 6291456"
-#                min  default  max
-
-# For USB/IP, lower default helps latency
-sudo sysctl -w net.ipv4.tcp_rmem="4096 65536 262144"
-sudo sysctl -w net.ipv4.tcp_wmem="4096 65536 262144"
-```
-
-### Maximum Message Size
-
-Defined in `shared/usbip-core/src/lib.rs`:
-
-```rust
-pub const MAX_MESSAGE_SIZE: usize = 1_048_576; // 1 MiB
-```
-
-This is far larger than any G920 URB. The size is set for compatibility with SuperSpeed bulk devices (up to 1024 bytes per packet × 16 packets per microframe). No tuning needed for G920.
-
 ---
 
 ## Android-Specific Performance
 
-### Wake Lock Impact
-
-The Android foreground service holds a `PARTIAL_WAKE_LOCK`, which prevents CPU sleep but allows screen sleep. This ensures consistent URB handling.
-
-**Power impact on Android TV:** ~0.5-1.5 W additional power consumption.
-
-### Buffer Handling in JNI
-
-Android uses Rust through JNI (`JNI` crate). The bridge (`RustBridge.kt`) translates between Kotlin and Rust buffers:
-
-```kotlin
-// RustBridge.kt
-external fun submitUrb(seqnum: Int, devid: Int, direction: Int,
-                        ep: Int, flags: Int, dataLen: Int,
-                        setup: ByteArray, data: ByteArray): IntArray
-```
-
-Each JNI call has ~0.05 ms overhead. For the G920's 1000 URBs/sec, this adds ~50 ms of CPU time per second across all calls.
-
-### USB Host API on Android
-
-Android's `UsbManager` and `UsbDeviceConnection` have their own latency:
-
-```
-UsbDeviceConnection.bulkTransfer:  ~0.2 - 0.5 ms per call
-UsbDeviceConnection.controlTransfer: ~0.3 - 1.0 ms per call
-```
-
-For interrupt transfers (G920), Android internally uses `UsbRequest` (async) which reduces latency to ~0.1 ms.
+- **Wake lock:** `PARTIAL_WAKE_LOCK` prevents CPU sleep (~0.5-1.5 W on TV).
+- **JNI overhead:** ~0.05 ms per call. At 1000 URBs/sec, ~50 ms CPU time/sec across all calls.
+- **USB Host API latency:** `bulkTransfer` ~0.2-0.5 ms, `controlTransfer` ~0.3-1.0 ms. Interrupt transfers via `UsbRequest` (async) reduce to ~0.1 ms.
 
 ---
 
 ## Benchmarking Your Setup
 
-### Method 1: Sequence Number Gap Analysis
-
-Both server and client log URB sequence numbers. Gaps indicate dropped or delayed URBs:
+### Sequence Number Gap Analysis
 
 ```bash
 RUST_LOG=trace usbip-server 2>&1 | grep "URB seqnum" | head -100
 ```
+Non-consecutive seqnums indicate dropped/delayed URBs.
 
-Look for non-consecutive sequence numbers (e.g., 101, 102, 104 — missing 103).
-
-### Method 2: Ping-Based Latency
+### Ping-Based Latency
 
 ```bash
-# Basic network latency
 ping <SERVER_IP>
-
-# More precise (1 ms interval)
 ping -i 0.001 <SERVER_IP>
 ```
 
-### Method 3: Custom Benchmark Tool
+### Custom Benchmark Tool
 
 ```bash
-# Build and run the benchmark
-cd /home/localadmin/anyplug
 cargo run --release --bin usbip-bench -- --server <SERVER_IP> --duration 30
-
-# Output:
-# Benchmarking USB/IP at 192.168.1.100:3240
-# Test URB size: 64 bytes
-# Duration: 30s
-# ---------+--------+--------+---------
-# Metric   | Avg    | p50    | p99
-# RTT (µs) | 1842   | 1780   | 3120
-# Throughput: 542 URBs/sec
 ```
 
-### Method 4: Application-Level Test
+### Application-Level Test
 
-Use the G920 with a game that shows FPS and input latency (e.g., Assetto Corsa, iRacing).
-
-1. Note the input latency feel with direct connection.
-2. Switch to USB/IP passthrough.
-3. Note any change in feel.
-4. If you can feel the difference, your latency is > 5 ms.
+Compare input latency feel with direct connection vs USB/IP. If you can feel the difference, latency is > 5 ms.
 
 ---
 
 ## Quick Optimization Checklist
 
-- [ ] Use **wired Ethernet** (not Wi-Fi)
-- [ ] Server and client on **same subnet/VLAN**
-- [ ] **TCP_NODELAY** enabled (default)
-- [ ] **Close other bandwidth-heavy apps** during use
-- [ ] **Encryption disabled** on trusted LANs
-- [ ] Buffer pool **≥ 1024** entries
-- [ ] USB device on **USB 2.0 port** (G920 quirk)
-- [ ] Server machine with **AES-NI** if using encryption
-- [ ] Android device **plugged in** (not on battery) for server mode
-- [ ] Use **`RUST_LOG=debug`** to monitor for gaps or errors
+- [ ] Wired Ethernet (not Wi-Fi)
+- [ ] Server and client on same subnet/VLAN
+- [ ] TCP_NODELAY enabled (default)
+- [ ] Close other bandwidth-heavy apps during use
+- [ ] Encryption disabled on trusted LANs
+- [ ] Buffer pool >= 1024 entries
+- [ ] Server machine with AES-NI if using encryption
+- [ ] Android device plugged in for server mode
+- [ ] Use `RUST_LOG=debug` to monitor for gaps/errors
 
 ---
 
@@ -620,6 +292,6 @@ Use the G920 with a game that shows FPS and input latency (e.g., Assetto Corsa, 
 
 - `shared/usbip-core/src/urb.rs` — URB buffer pooling
 - `shared/usbip-core/src/lib.rs` — MAX_MESSAGE_SIZE constant
-- `shared/usbip-core/src/crypto.rs` — AES-256-GCM encryption implementation
+- `shared/usbip-core/src/crypto.rs` — AES-256-GCM encryption
 - `client/usbip-client/src/client.rs` — TCP connection and nodelay
-- Linux: `Documentation/networking/ip-sysctl.txt` — TCP tuning parameters
+- Linux: `Documentation/networking/ip-sysctl.txt`

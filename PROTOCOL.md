@@ -1,7 +1,7 @@
-# USB/IP Protocol Specification
+# USB/IP Protocol
 
-Reference implementation for this project. Based on the Linux kernel USB/IP protocol
-and extended with encryption and compression.
+Reference for this project's wire format. Based on the Linux kernel USB/IP protocol
+with encryption and compression extensions.
 
 ---
 
@@ -21,7 +21,7 @@ Connection flow:
 
 ## 2. Common Header
 
-Every USB/IP message begins with this 8-byte header:
+Every USB/IP message begins with an 8-byte header:
 
 ```
 Offset  Size  Field           Description
@@ -238,48 +238,7 @@ Server → Client (asynchronous — server cancels an in-flight URB)
   0x08    4     status
 ```
 
-## 6. G920-Specific Protocol Notes
-
-The Logitech G920 presents as a composite USB device:
-
-```
-VID:PID = 046d:c261 (G920, Xbox mode)
-VID:PID = 046d:c262 (G920, PS4 mode — not the user's target)
-
-Interface 0: HID (steering wheel — X/Y axes, buttons, D-pad)
-  Endpoint 0x81: IN, Interrupt, 64 bytes max
-  Endpoint 0x01: OUT, Interrupt, 64 bytes max (force feedback)
-
-Interface 1: HID (pedals — combined or separate axes)
-  Endpoint 0x82: IN, Interrupt, 8 bytes max
-  (sometimes mapped internally; G920's pedal set is wired)
-
-Interface 2: HID (shifter — if Logitech Driving Force Shifter attached)
-  Endpoint 0x83: IN, Interrupt, 8 bytes max
-
-Force feedback report structure (to 0x01 OUT endpoint):
-  [0]    Report ID (0x01 for standard FFB)
-  [1]    Effect ID (1-4)
-  [2]    Command (0x01=start, 0x02=stop, 0x03=update params)
-  [3..]  Effect parameters (varies by command)
-
-The G920's force feedback uses a proprietary HID report structure
-compatible with the "Logitech Driving Force" HID descriptor.
-All FFB commands are HID SET_REPORT via the interrupt OUT endpoint.
-```
-
-### 6.1 Force Feedback Over USB/IP
-
-FFB is latency-sensitive. Key considerations:
-
-1. **Effect upload**: Games upload FFB effects once at startup (not perf-critical)
-2. **Effect playback**: Start/stop commands are small (7 bytes), must be fast
-3. **Constant force update**: Some games update torque 250x/sec — these URBs are 7 bytes each
-4. **URB pooling**: Pre-allocate and reuse URB structs to avoid allocation in hot path
-
-The USB/IP protocol handles this naturally — the game's `DeviceIoControl(IOCTL_HID_SET_REPORT)` becomes a `USBIP_CMD_SUBMIT` on the client, forwarded to the server, executed on the real G920, and the completion is `USBIP_RET_SUBMIT` back to the client.
-
-## 7. Encryption Extension (non-standard)
+## 6. Encryption Extension (non-standard)
 
 When encryption is enabled, after the initial TCP handshake:
 
@@ -301,7 +260,7 @@ Client                                    Server
   │                                         │
 ```
 
-## 8. Compression Extension (optional)
+## 7. Compression Extension (optional)
 
 For bulk endpoints on slow links:
 
@@ -318,7 +277,7 @@ After encryption (if enabled):
   Only applied when compressed_size < uncompressed_size - threshold (64 bytes).
 ```
 
-## 9. Error Codes
+## 8. Error Codes
 
 ```
 USBIP status codes (in OP_REP_* status field):

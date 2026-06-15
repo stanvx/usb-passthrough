@@ -42,7 +42,6 @@ pub struct UsbDeviceInfo {
     /// USB device speed (0=Unknown, 1=Low, 2=Full, 3=High, 4=Super)
     pub speed: u32,
     // Device-specific detection: VID/PID comparison is caller logic.
-    // See docs/G920-SPECIFIC.md for the VID:PID values.
 }
 
 impl Default for UsbDeviceInfo {
@@ -107,8 +106,7 @@ pub fn enumerate_usb_devices() -> UsbIpResult<Vec<UsbDeviceInfo>> {
         }
 
         // Get the device description
-        if let Ok(desc) =
-            get_device_registry_string(dev_info_set, &dev_info_data, SPDRP_DEVICEDESC)
+        if let Ok(desc) = get_device_registry_string(dev_info_set, &dev_info_data, SPDRP_DEVICEDESC)
         {
             info.description = desc;
         }

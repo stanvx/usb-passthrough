@@ -71,7 +71,7 @@ Project roadmap and milestone tracking for the USB/IP passthrough system.
 ## Milestone 6: Windows Support ✅
 
 - [x] Win32 SetupAPI USB enumeration (`windows/src/windows_usb.rs`)
-- [x] Device VID/PID enumeration (G920-specific constants retired; caller-side detection)
+- [x] Device VID/PID enumeration (device-specific constants retired; caller-side detection)
 - [x] egui system tray GUI (`windows/src/main.rs`)
 - [x] Windows Service integration (`windows-service` crate)
 - [x] Service install/start/stop commands
@@ -109,7 +109,7 @@ Project roadmap and milestone tracking for the USB/IP passthrough system.
 - [x] ROADMAP.md — milestone tracking
 - [x] docs/SETUP.md — platform setup guides
 - [x] docs/TROUBLESHOOTING.md — diagnosis and fixes
-- [x] docs/G920-SPECIFIC.md — G920 deep dive
+- [x] docs/DEVICES.md — device profiles and known quirks
 - [x] docs/ANDROID-TV.md — TV-specific guide
 - [x] docs/PERFORMANCE.md — latency, benchmarks, tuning
 - [x] docs/BUILDING.md — compilation from source
@@ -131,14 +131,14 @@ Device-class conformance testing that proves the project works with arbitrary US
 not just the original reference hardware. Delivered per PRD #1.
 
 - [x] Generic URB test scaffolding — HID IN, bulk OUT, control transfer round-trips
-- [x] Descriptor fixture framework — TOML sidecar schema, G920 + HID keyboard starter corpus
+- [x] Descriptor fixture framework — TOML sidecar schema, HID device + keyboard starter corpus
 - [x] QEMU kernel build + initramfs boot infrastructure (configfs + dummy_hcd/udc)
 - [x] HID keyboard E2E tracer bullet (configfs gadget → usbip-server → usbip-client over loopback)
 - [x] Multi-gadget E2E: mass-storage (file-backed LUN) + CDC-ACM (virtual serial) in single VM boot
 - [x] Structured JSON test output per gadget (`test`, `status`, `duration_ms`)
 - [x] E2E CI workflow (`.github/workflows/e2e-linux.yml`) with kernel caching + step summary
 - [x] Architecture deepening — VHCI platform seam, busid parsing, parsed descriptors, URB executor seam
-- [x] G920 debt fully retired — no device-specific constants in generic infrastructure
+- [x] Device-specific debt fully retired — no device-specific constants in generic infrastructure
 - [x] CONTRIBUTING.md fixture capture guide for community descriptor corpus
 
 ## Milestone 11: Performance Optimization ✅
@@ -201,7 +201,7 @@ Features explicitly deferred beyond v1.0:
 | 0.2.0 | — | Linux server + client, Windows support |
 | 0.3.0 | — | Android app (phone + TV) |
 | 0.4.0 | — | Documentation complete, CI/CD |
-| 0.5.0 | 2026-06 | Generality test rig, E2E CI, G920 debt retired |
+| 0.5.0 | 2026-06 | Generality test rig, E2E CI, test rig generality |
 | 1.0.0 | TBD | Stable release: M1-M14 (reliability, performance, macOS, Docker, web UI, ecosystem) |
 
 ---

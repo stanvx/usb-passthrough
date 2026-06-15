@@ -176,7 +176,7 @@ install_config() {
 # By default, exports all supported devices on interface 0.0.0.0:3240.
 #
 # For device VID:PID allowlisting, uncomment and add entries:
-#   allow-device = 046d:c242   # Logitech G920
+#   allow-device = 046d:c261   # Example: allow a specific device
 #   allow-device = 054c:09cc   # Sony DualShock 4
 #
 interface = 0.0.0.0

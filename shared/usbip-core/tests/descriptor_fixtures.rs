@@ -248,6 +248,6 @@ fn all_fixtures_parse_correctly() {
 #[should_panic(expected = "device.b_device_class mismatch")]
 fn fixture_mismatch_produces_clear_error() {
     let fixtures_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let mismatch = fixtures_root.join("g920_mismatch");
+    let mismatch = fixtures_root.join("hid_mismatch");
     verify_fixture(&mismatch);
 }

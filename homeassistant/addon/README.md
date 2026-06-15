@@ -46,7 +46,7 @@ List of `VID:PID` hex pairs to restrict which USB devices are exported. Example:
 
 ```yaml
 allowlist:
-  - "046d:c261"   # Logitech G920
+  - "046d:c261"   # Example device VID:PID for allowlisting
   - "03f0:1234"   # HP printer
 ```
 

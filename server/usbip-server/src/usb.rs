@@ -108,25 +108,6 @@ impl UsbDeviceManager {
     }
 }
 
-/// Convert a rusb error to a USB/IP URB status code (no newtype wrapping).
-pub fn rusb_to_urb_status_nonew(err: &rusb::Error) -> i32 {
-    match err {
-        rusb::Error::Io => -5,
-        rusb::Error::InvalidParam => -22,
-        rusb::Error::Access => -1,
-        rusb::Error::NoDevice => -19,
-        rusb::Error::NotFound => -2,
-        rusb::Error::Busy => -16,
-        rusb::Error::Timeout => -62,
-        rusb::Error::Overflow => -75,
-        rusb::Error::Pipe => -32,
-        rusb::Error::Interrupted => -4,
-        rusb::Error::NoMem => -12,
-        rusb::Error::NotSupported => -95,
-        _ => -5,
-    }
-}
-
 /// Parse a busid string ("busnum-devnum") into its numeric components.
 fn parse_busid(busid: &str) -> UsbIpResult<(u8, u8)> {
     let parts: Vec<&str> = busid.split('-').collect();
@@ -168,10 +149,10 @@ mod tests {
 
     #[test]
     fn test_rusb_to_urb_status_mapping() {
-        assert_eq!(rusb_to_urb_status_nonew(&rusb::Error::Io), -5);
-        assert_eq!(rusb_to_urb_status_nonew(&rusb::Error::Timeout), -62);
-        assert_eq!(rusb_to_urb_status_nonew(&rusb::Error::NoDevice), -19);
-        assert_eq!(rusb_to_urb_status_nonew(&rusb::Error::NotSupported), -95);
+        assert_eq!(usbip_core::error::rusb_to_urb_status(&rusb::Error::Io), -5);
+        assert_eq!(usbip_core::error::rusb_to_urb_status(&rusb::Error::Timeout), -62);
+        assert_eq!(usbip_core::error::rusb_to_urb_status(&rusb::Error::NoDevice), -19);
+        assert_eq!(usbip_core::error::rusb_to_urb_status(&rusb::Error::NotSupported), -95);
     }
 
     /// The `with_backend` constructor accepts any `Box<dyn UsbBackend>`.
@@ -205,7 +186,7 @@ mod tests {
         let fake = FakeBackend::new(vec![dev1, dev2]);
         let mgr = UsbDeviceManager::with_backend(Box::new(fake));
 
-        // Allow only Logitech (046d:c261)
+        // Allow only a specific device (046d:c261)
         let devs = mgr.list_exportable_devices(&[(0x046d, 0xc261)]);
         assert_eq!(devs.len(), 1);
         assert_eq!(devs[0].vid(), 0x046d);
