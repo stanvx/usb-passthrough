@@ -223,7 +223,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "anyplug"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -5017,7 +5017,7 @@ dependencies = [
 
 [[package]]
 name = "usbip-client"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "byteorder",
@@ -5042,7 +5042,7 @@ dependencies = [
 
 [[package]]
 name = "usbip-core"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "byteorder",
  "crc32fast",
@@ -5061,7 +5061,7 @@ dependencies = [
 
 [[package]]
 name = "usbip-server"
-version = "0.1.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
