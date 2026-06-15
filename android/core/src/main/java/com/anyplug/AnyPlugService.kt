@@ -65,9 +65,13 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
 
-        val notificationIntent = Intent(this, MainActivity::class.java)
+        val notificationIntent =
+            packageManager.getLaunchIntentForPackage(packageName)
+                ?: Intent()
         val pendingIntent = PendingIntent.getActivity(
-            this, 0, notificationIntent,
+            this,
+            0,
+            notificationIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 

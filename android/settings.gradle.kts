@@ -15,5 +15,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "anyplug"
+include(":core")
 include(":app")
 include(":tv")

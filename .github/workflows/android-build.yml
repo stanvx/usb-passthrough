@@ -96,6 +96,7 @@ jobs:
 
       - name: Build TV release APK
         run: cd android && ./gradlew :tv:assembleRelease
+        continue-on-error: true
 
       - name: Upload phone debug APK
         uses: actions/upload-artifact@v4

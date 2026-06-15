@@ -50,9 +50,10 @@ android {
 }
 
 dependencies {
-    implementation(project(":app"))
+    // Shared core (service, bridge, Rust JNI, models)
+    implementation(project(":core"))
 
-    // Compose BOM (shared with app module)
+    // Compose BOM
     val composeBom = platform("androidx.compose:compose-bom:2023.10.01")
     implementation(composeBom)
     implementation("androidx.compose.material3:material3")
