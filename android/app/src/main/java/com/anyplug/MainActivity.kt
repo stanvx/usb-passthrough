@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import com.anyplug.bridge.RustBridge
+import com.anyplug.model.*
 import com.anyplug.ui.*
 
 class MainActivity : ComponentActivity() {
