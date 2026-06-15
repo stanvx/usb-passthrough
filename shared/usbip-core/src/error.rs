@@ -48,8 +48,13 @@ pub enum ErrorKind {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
 
+    #[cfg(not(target_os = "android"))]
     #[error("USB error: {0}")]
     Usb(#[from] rusb::Error),
+
+    #[cfg(target_os = "android")]
+    #[error("USB error: errno={0}")]
+    UsbRaw(i32),
 
     #[error("Protocol error: {0}")]
     Protocol(String),
@@ -101,6 +106,7 @@ impl ErrorKind {
                 _ => ErrorCategory::Permanent,
             },
 
+            #[cfg(not(target_os = "android"))]
             ErrorKind::Usb(e) => {
                 // rusb errors that map to a transport retry
                 if matches!(e, rusb::Error::Timeout | rusb::Error::Busy) {
@@ -109,6 +115,9 @@ impl ErrorKind {
                     ErrorCategory::Permanent
                 }
             },
+
+            #[cfg(target_os = "android")]
+            ErrorKind::UsbRaw(_) => ErrorCategory::Permanent,
 
             ErrorKind::DeviceNotFound(_)
             | ErrorKind::DeviceBusy(_)
@@ -229,6 +238,7 @@ impl From<std::io::Error> for UsbIpError {
     }
 }
 
+#[cfg(not(target_os = "android"))]
 impl From<rusb::Error> for UsbIpError {
     fn from(e: rusb::Error) -> Self {
         let category = if matches!(e, rusb::Error::Timeout | rusb::Error::Busy) {
@@ -244,6 +254,7 @@ impl From<rusb::Error> for UsbIpError {
 pub type UsbIpResult<T> = Result<T, UsbIpError>;
 
 /// Convert a libusb error to a USB/IP URB status code.
+#[cfg(not(target_os = "android"))]
 pub fn rusb_to_urb_status(err: &rusb::Error) -> i32 {
     use rusb::Error;
     match err {
@@ -367,6 +378,7 @@ mod tests {
             ErrorKind::Timeout,
             ErrorKind::ConnectionClosed,
             ErrorKind::Io(std::io::Error::new(std::io::ErrorKind::WouldBlock, "test")),
+            #[cfg(not(target_os = "android"))]
             ErrorKind::Usb(rusb::Error::Timeout),
         ];
         for kind in kinds {
@@ -405,6 +417,7 @@ mod tests {
 
     // ── Backward compat: rusb_to_urb_status ────────────────
 
+    #[cfg(not(target_os = "android"))]
     #[test]
     fn test_rusb_to_urb_status_unchanged() {
         assert_eq!(rusb_to_urb_status(&rusb::Error::Io), -5);
