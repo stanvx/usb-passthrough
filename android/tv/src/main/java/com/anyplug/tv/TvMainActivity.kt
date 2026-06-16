@@ -9,22 +9,26 @@ import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.anyplug.AnyPlugService
 import com.anyplug.bridge.RustBridge
 import com.anyplug.model.DiscoveredServer
 import com.anyplug.model.LocalUsbDevice
+import com.anyplug.tv.theme.TvTheme
 import com.anyplug.tv.ui.TvLeanbackScreen
 
 /**
- * Android TV launcher activity with Leanback-optimized UI.
+ * Android TV launcher activity with Leanback-optimised UI.
  *
- * Uses Compose with large touch targets and D-pad navigation
- * improvements for TV remote control operation.
+ * Uses the dark [TvTheme] with enlarged typography and D-pad
+ * focus management for TV remote operation.
  */
 class TvMainActivity : ComponentActivity() {
 
@@ -36,6 +40,7 @@ class TvMainActivity : ComponentActivity() {
             service = (binder as AnyPlugService.LocalBinder).getService()
             serviceBound = true
         }
+
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
             serviceBound = false
@@ -45,19 +50,19 @@ class TvMainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Edge-to-edge for modern TV displays
+        enableEdgeToEdge()
+
         // Initialize Rust JNI bridge
         RustBridge.init()
 
-        // Bind to service
+        // Bind to foreground service
         val intent = Intent(this, AnyPlugService::class.java)
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+            TvTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
                     var isRunning by remember { mutableStateOf(false) }
                     var modeText by remember { mutableStateOf("") }
 
@@ -76,7 +81,10 @@ class TvMainActivity : ComponentActivity() {
                         onConnectToServer = { host, busId ->
                             val parts = host.split(":")
                             val h = parts[0]
-                            val p = if (parts.size > 1) parts[1].toIntOrNull() ?: 3240 else 3240
+                            val p = if (parts.size > 1)
+                                parts[1].toIntOrNull() ?: 3240
+                            else
+                                3240
                             service?.startClient(h, p, busId)
                             isRunning = true
                             modeText = "Client — connected to $host"
@@ -84,7 +92,7 @@ class TvMainActivity : ComponentActivity() {
                         discoveredServers = discoveredServers,
                         localDevices = localDevices,
                         isServiceRunning = isRunning,
-                        serviceModeText = modeText
+                        serviceModeText = modeText,
                     )
                 }
             }
@@ -100,7 +108,7 @@ class TvMainActivity : ComponentActivity() {
     }
 
     /**
-     * Enumerate currently attached USB devices.
+     * Enumerate currently attached USB devices via the Android USB Host API.
      */
     private fun getAttachedUsbDevices(): List<LocalUsbDevice> {
         val usbManager = getSystemService(USB_SERVICE) as UsbManager
@@ -108,7 +116,7 @@ class TvMainActivity : ComponentActivity() {
             LocalUsbDevice(
                 name = device.productName ?: "USB Device ${device.deviceId}",
                 vid = device.vendorId,
-                pid = device.productId
+                pid = device.productId,
             )
         }
     }

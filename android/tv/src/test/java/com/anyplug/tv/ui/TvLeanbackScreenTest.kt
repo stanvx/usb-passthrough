@@ -5,18 +5,20 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.anyplug.model.DiscoveredServer
 import com.anyplug.model.LocalUsbDevice
+import com.anyplug.model.RemoteDevice
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Tests for TV-optimized Leanback UI components.
+ * Tests for TV-optimised Leanback UI components.
  *
  * Verifies:
  * - Section headers render with correct text
  * - Device cards display name and VID:PID
  * - Empty state messages appear when no devices found
  * - Service status indicator shows correct state
+ * - Manual connection input renders correctly
  */
 @RunWith(AndroidJUnit4::class)
 class TvLeanbackScreenTest {
@@ -25,9 +27,9 @@ class TvLeanbackScreenTest {
     val composeTestRule = createComposeRule()
 
     @Test
-    fun sectionHeader_displaysTitle() {
+    fun tvSectionHeader_displaysTitle() {
         composeTestRule.setContent {
-            SectionHeader("Test Devices")
+            TvSectionHeader("Test Devices")
         }
         composeTestRule.onNodeWithText("Test Devices").assertExists()
     }
@@ -39,7 +41,7 @@ class TvLeanbackScreenTest {
                 title = "USB Device",
                 subtitle = "1234:5678",
                 actionLabel = "Share",
-                onAction = {}
+                onAction = {},
             )
         }
         composeTestRule.onNodeWithText("USB Device").assertExists()
@@ -48,9 +50,9 @@ class TvLeanbackScreenTest {
     }
 
     @Test
-    fun tvEmptyMessage_showsProvidedMessage() {
+    fun tvEmptyState_showsProvidedMessage() {
         composeTestRule.setContent {
-            TvEmptyMessage("No devices found. Connect a USB device.")
+            TvEmptyState("No devices found. Connect a USB device.")
         }
         composeTestRule.onNodeWithText("No devices found. Connect a USB device.").assertExists()
     }
@@ -72,7 +74,7 @@ class TvLeanbackScreenTest {
                 discoveredServers = emptyList(),
                 localDevices = emptyList(),
                 isServiceRunning = false,
-                serviceModeText = ""
+                serviceModeText = "",
             )
         }
         composeTestRule.onNodeWithText("Stopped").assertExists()
@@ -87,7 +89,7 @@ class TvLeanbackScreenTest {
                 discoveredServers = emptyList(),
                 localDevices = emptyList(),
                 isServiceRunning = true,
-                serviceModeText = "Server — sharing test"
+                serviceModeText = "Server — sharing test",
             )
         }
         composeTestRule.onNodeWithText("Running — Server — sharing test").assertExists()
@@ -96,7 +98,7 @@ class TvLeanbackScreenTest {
     @Test
     fun leanbackScreen_listsLocalDevices() {
         val devices = listOf(
-            LocalUsbDevice(name = "Test Drive", vid = 0x1234, pid = 0x5678)
+            LocalUsbDevice(name = "Test Drive", vid = 0x1234, pid = 0x5678),
         )
         composeTestRule.setContent {
             TvLeanbackScreen(
@@ -105,7 +107,7 @@ class TvLeanbackScreenTest {
                 discoveredServers = emptyList(),
                 localDevices = devices,
                 isServiceRunning = false,
-                serviceModeText = ""
+                serviceModeText = "",
             )
         }
         composeTestRule.onNodeWithText("Test Drive").assertExists()
@@ -121,11 +123,12 @@ class TvLeanbackScreenTest {
                 discoveredServers = emptyList(),
                 localDevices = emptyList(),
                 isServiceRunning = false,
-                serviceModeText = ""
+                serviceModeText = "",
             )
         }
-        composeTestRule.onNodeWithText("No USB devices found. Plug in a device and ensure USB Host mode is enabled.")
-            .assertExists()
+        composeTestRule.onNodeWithText(
+            "No USB devices found. Plug in a device and ensure USB Host mode is enabled.",
+        ).assertExists()
     }
 
     @Test
@@ -135,9 +138,9 @@ class TvLeanbackScreenTest {
                 host = "192.168.1.100",
                 port = 3240,
                 devices = listOf(
-                    com.anyplug.model.RemoteDevice("flash-drive", "1-1", 0x1234, 0x5678)
-                )
-            )
+                    RemoteDevice("flash-drive", "1-1", 0x1234, 0x5678),
+                ),
+            ),
         )
         composeTestRule.setContent {
             TvLeanbackScreen(
@@ -146,10 +149,42 @@ class TvLeanbackScreenTest {
                 discoveredServers = servers,
                 localDevices = emptyList(),
                 isServiceRunning = false,
-                serviceModeText = ""
+                serviceModeText = "",
             )
         }
         composeTestRule.onNodeWithText("192.168.1.100").assertExists()
         composeTestRule.onNodeWithText("flash-drive (1-1)").assertExists()
+    }
+
+    @Test
+    fun leanbackScreen_showsManualConnectionSection() {
+        composeTestRule.setContent {
+            TvLeanbackScreen(
+                onStartServer = {},
+                onConnectToServer = { _, _ -> },
+                discoveredServers = emptyList(),
+                localDevices = emptyList(),
+                isServiceRunning = false,
+                serviceModeText = "",
+            )
+        }
+        composeTestRule.onNodeWithText("Manual Connection").assertExists()
+        composeTestRule.onNodeWithText("Connect").assertExists()
+    }
+
+    @Test
+    fun tvStatusCard_showsRunningState() {
+        composeTestRule.setContent {
+            TvStatusCard(isRunning = true, modeText = "Client — connected")
+        }
+        composeTestRule.onNodeWithText("Running — Client — connected").assertExists()
+    }
+
+    @Test
+    fun tvStatusCard_showsStoppedState() {
+        composeTestRule.setContent {
+            TvStatusCard(isRunning = false, modeText = "")
+        }
+        composeTestRule.onNodeWithText("Stopped").assertExists()
     }
 }

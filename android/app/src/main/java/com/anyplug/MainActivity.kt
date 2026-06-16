@@ -9,15 +9,29 @@ import android.os.Bundle
 import android.os.IBinder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import com.anyplug.bridge.RustBridge
-import com.anyplug.model.*
-import com.anyplug.ui.*
+import com.anyplug.model.DiscoveredServer
+import com.anyplug.model.LocalUsbDevice
+import com.anyplug.theme.AnyPlugTheme
+import com.anyplug.ui.MainScreen
 
+/**
+ * Phone / tablet launcher activity for AnyPlug.
+ *
+ * Binds to [AnyPlugService] and renders the Compose UI with
+ * an M3 Expressive theme powered by [AnyPlugTheme].
+ *
+ * @see AnyPlugService
+ * @see MainScreen
+ */
 class MainActivity : ComponentActivity() {
 
     private var service: AnyPlugService? = null
@@ -28,6 +42,7 @@ class MainActivity : ComponentActivity() {
             service = (binder as AnyPlugService.LocalBinder).getService()
             serviceBound = true
         }
+
         override fun onServiceDisconnected(name: ComponentName?) {
             service = null
             serviceBound = false
@@ -37,19 +52,19 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Modern edge-to-edge — draws behind system bars
+        enableEdgeToEdge()
+
         // Initialize Rust JNI bridge
         RustBridge.init()
 
-        // Bind to service
+        // Bind to foreground service
         val intent = Intent(this, AnyPlugService::class.java)
         bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         setContent {
-            MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
+            AnyPlugTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
                     var isRunning by remember { mutableStateOf(false) }
                     var modeText by remember { mutableStateOf("") }
 
@@ -68,7 +83,11 @@ class MainActivity : ComponentActivity() {
                         onConnectToServer = { host, busId ->
                             val parts = host.split(":")
                             val h = parts[0]
-                            val p = if (parts.size > 1) parts[1].toIntOrNull() ?: 3240 else 3240
+                            val p = if (parts.size > 1) {
+                                parts[1].toIntOrNull() ?: 3240
+                            } else {
+                                3240
+                            }
                             service?.startClient(h, p, busId)
                             isRunning = true
                             modeText = "Client — connected to $host"
@@ -76,7 +95,7 @@ class MainActivity : ComponentActivity() {
                         discoveredServers = discoveredServers,
                         localDevices = localDevices,
                         isServiceRunning = isRunning,
-                        serviceModeText = modeText
+                        serviceModeText = modeText,
                     )
                 }
             }
@@ -92,7 +111,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Enumerate currently attached USB devices.
+     * Enumerate currently attached USB devices via the Android USB Host API.
      */
     private fun getAttachedUsbDevices(): List<LocalUsbDevice> {
         val usbManager = getSystemService(USB_SERVICE) as UsbManager
@@ -100,7 +119,7 @@ class MainActivity : ComponentActivity() {
             LocalUsbDevice(
                 name = device.productName ?: "USB Device ${device.deviceId}",
                 vid = device.vendorId,
-                pid = device.productId
+                pid = device.productId,
             )
         }
     }
