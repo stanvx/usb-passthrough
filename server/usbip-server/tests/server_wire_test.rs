@@ -11,7 +11,7 @@ use tokio::net::TcpListener;
 
 use usbip_core::protocol::{
     UsbIpDeviceEntry, UsbIpHeader, OP_REP_DEVLIST, OP_REP_IMPORT, OP_REQ_DEVLIST, OP_REQ_IMPORT,
-    STATUS_SUCCESS, U32BE,
+    STATUS_SUCCESS,
 };
 use zerocopy::{FromBytes, IntoBytes};
 

@@ -58,8 +58,8 @@ jobs:
           echo "ndk.dir=$ANDROID_HOME/ndk/27.0.12077973" >> android/local.properties
 
       - name: Grant execute permission for gradlew
-        run: chmod +x gradlew || true
+        run: chmod +x android/gradlew || true
 
       - name: Run lint (debug)
-        run: ./gradlew lintDebug --no-daemon
+        run: cd android && ./gradlew lintDebug --no-daemon
         continue-on-error: true
