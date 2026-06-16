@@ -18,6 +18,7 @@ import org.junit.runner.RunWith
  * - Device cards display name and VID:PID
  * - Empty state messages appear when no devices found
  * - Service status indicator shows correct state
+ * - Stop button appears when running
  * - Manual connection input renders correctly
  */
 @RunWith(AndroidJUnit4::class)
@@ -50,6 +51,20 @@ class TvLeanbackScreenTest {
     }
 
     @Test
+    fun tvDeviceCard_showsStopSharingWhenDestructive() {
+        composeTestRule.setContent {
+            TvDeviceCard(
+                title = "USB Device",
+                subtitle = "1234:5678",
+                actionLabel = "Stop Sharing",
+                onAction = {},
+                isDestructive = true,
+            )
+        }
+        composeTestRule.onNodeWithText("Stop Sharing").assertExists()
+    }
+
+    @Test
     fun tvEmptyState_showsProvidedMessage() {
         composeTestRule.setContent {
             TvEmptyState("No devices found. Connect a USB device.")
@@ -66,10 +81,19 @@ class TvLeanbackScreenTest {
     }
 
     @Test
+    fun tvButton_displaysDestructiveLabel() {
+        composeTestRule.setContent {
+            TvButton(label = "Stop Sharing", onClick = {}, isDestructive = true)
+        }
+        composeTestRule.onNodeWithText("Stop Sharing").assertExists()
+    }
+
+    @Test
     fun leanbackScreen_showsStoppedStateInitially() {
         composeTestRule.setContent {
             TvLeanbackScreen(
                 onStartServer = {},
+                onStopService = {},
                 onConnectToServer = { _, _ -> },
                 discoveredServers = emptyList(),
                 localDevices = emptyList(),
@@ -85,6 +109,7 @@ class TvLeanbackScreenTest {
         composeTestRule.setContent {
             TvLeanbackScreen(
                 onStartServer = {},
+                onStopService = {},
                 onConnectToServer = { _, _ -> },
                 discoveredServers = emptyList(),
                 localDevices = emptyList(),
@@ -96,6 +121,22 @@ class TvLeanbackScreenTest {
     }
 
     @Test
+    fun leanbackScreen_showsStopButtonWhenRunning() {
+        composeTestRule.setContent {
+            TvLeanbackScreen(
+                onStartServer = {},
+                onStopService = {},
+                onConnectToServer = { _, _ -> },
+                discoveredServers = emptyList(),
+                localDevices = emptyList(),
+                isServiceRunning = true,
+                serviceModeText = "test",
+            )
+        }
+        composeTestRule.onNodeWithText("Stop").assertExists()
+    }
+
+    @Test
     fun leanbackScreen_listsLocalDevices() {
         val devices = listOf(
             LocalUsbDevice(name = "Test Drive", vid = 0x1234, pid = 0x5678),
@@ -103,6 +144,7 @@ class TvLeanbackScreenTest {
         composeTestRule.setContent {
             TvLeanbackScreen(
                 onStartServer = {},
+                onStopService = {},
                 onConnectToServer = { _, _ -> },
                 discoveredServers = emptyList(),
                 localDevices = devices,
@@ -119,6 +161,7 @@ class TvLeanbackScreenTest {
         composeTestRule.setContent {
             TvLeanbackScreen(
                 onStartServer = {},
+                onStopService = {},
                 onConnectToServer = { _, _ -> },
                 discoveredServers = emptyList(),
                 localDevices = emptyList(),
@@ -145,6 +188,7 @@ class TvLeanbackScreenTest {
         composeTestRule.setContent {
             TvLeanbackScreen(
                 onStartServer = {},
+                onStopService = {},
                 onConnectToServer = { _, _ -> },
                 discoveredServers = servers,
                 localDevices = emptyList(),
@@ -161,6 +205,7 @@ class TvLeanbackScreenTest {
         composeTestRule.setContent {
             TvLeanbackScreen(
                 onStartServer = {},
+                onStopService = {},
                 onConnectToServer = { _, _ -> },
                 discoveredServers = emptyList(),
                 localDevices = emptyList(),
@@ -186,5 +231,17 @@ class TvLeanbackScreenTest {
             TvStatusCard(isRunning = false, modeText = "")
         }
         composeTestRule.onNodeWithText("Stopped").assertExists()
+    }
+
+    @Test
+    fun tvStatusCard_showsStopButtonWhenRunning() {
+        composeTestRule.setContent {
+            TvStatusCard(
+                isRunning = true,
+                modeText = "test",
+                onStopClick = {},
+            )
+        }
+        composeTestRule.onNodeWithText("Stop").assertExists()
     }
 }

@@ -7,17 +7,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.anyplug.theme.runningGreen
@@ -35,14 +34,18 @@ import com.anyplug.theme.stoppedGray
 /**
  * A compact card showing the current service status.
  *
- * - Running    → green dot + descriptive text
+ * - Running    → green dot + descriptive text + optional Stop button
  * - Stopped    → gray dot + "Stopped"
+ *
+ * The card is always visible to keep the layout stable — it never
+ * pushes content around by appearing or disappearing.
  */
 @Composable
 fun StatusCard(
     isRunning: Boolean,
     modeText: String,
     modifier: Modifier = Modifier,
+    onStopClick: (() -> Unit)? = null,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -68,10 +71,22 @@ fun StatusCard(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
+            // Status text — takes remaining space
             Text(
                 text = if (isRunning) "Running — $modeText" else "Stopped",
                 style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
             )
+            // Stop button — only shown when running
+            if (onStopClick != null) {
+                TextButton(onClick = onStopClick) {
+                    Text(
+                        text = "Stop",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
         }
     }
 }
@@ -80,6 +95,9 @@ fun StatusCard(
 
 /**
  * A row-style card showing a USB device and its share / connect action.
+ *
+ * @param isDestructive When true, the action button uses error/destructive
+ *   styling (used for "Stop Sharing" state).
  */
 @Composable
 fun DeviceCard(
@@ -88,6 +106,7 @@ fun DeviceCard(
     actionLabel: String,
     onAction: () -> Unit,
     modifier: Modifier = Modifier,
+    isDestructive: Boolean = false,
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -118,6 +137,14 @@ fun DeviceCard(
             Button(
                 onClick = onAction,
                 contentPadding = ButtonDefaults.TextButtonContentPadding,
+                colors = if (isDestructive) {
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    )
+                } else {
+                    ButtonDefaults.buttonColors()
+                },
             ) {
                 Text(text = actionLabel)
             }

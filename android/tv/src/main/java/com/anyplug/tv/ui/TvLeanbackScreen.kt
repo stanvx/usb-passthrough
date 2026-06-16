@@ -13,11 +13,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -42,12 +47,15 @@ import com.anyplug.model.RemoteDevice
 @Composable
 fun TvLeanbackScreen(
     onStartServer: (deviceName: String) -> Unit,
+    onStopService: () -> Unit,
     onConnectToServer: (host: String, busId: String) -> Unit,
     discoveredServers: List<DiscoveredServer>,
     localDevices: List<LocalUsbDevice>,
     isServiceRunning: Boolean,
     serviceModeText: String,
+    sharedDeviceName: String = "",
 ) {
+    var showStorageWarning by remember { mutableStateOf<LocalUsbDevice?>(null) }
     val scrollState = rememberScrollState()
     val headerFocusRequester = remember { FocusRequester() }
 
@@ -85,6 +93,7 @@ fun TvLeanbackScreen(
         TvStatusCard(
             isRunning = isServiceRunning,
             modeText = serviceModeText,
+            onStopClick = if (isServiceRunning) onStopService else null,
         )
 
         Spacer(modifier = Modifier.height(48.dp))
@@ -103,12 +112,21 @@ fun TvLeanbackScreen(
             // Focus group for the device list
             TvFocusGroup {
                 localDevices.forEach { device ->
+                    val isThisDeviceShared = sharedDeviceName == device.name
+
                     TvDeviceCard(
                         title = device.name,
                         subtitle = "${device.vid.toString(16).padStart(4, '0')}:" +
                             device.pid.toString(16).padStart(4, '0'),
-                        actionLabel = "Share",
-                        onAction = { onStartServer(device.name) },
+                        actionLabel = if (isThisDeviceShared) "Stop Sharing" else "Share",
+                        isDestructive = isThisDeviceShared,
+                        onAction = {
+                            if (!isThisDeviceShared && device.isMassStorage) {
+                                showStorageWarning = device
+                            } else if (!isThisDeviceShared) {
+                                onStartServer(device.name)
+                            }
+                        },
                     )
                 }
             }
@@ -181,5 +199,35 @@ fun TvLeanbackScreen(
         )
 
         Spacer(modifier = Modifier.height(64.dp))
+    }
+
+    // ── Mass-storage warning dialog ────────────────────────────
+    val warnedDevice = showStorageWarning
+    if (warnedDevice != null) {
+        AlertDialog(
+            onDismissRequest = { showStorageWarning = null },
+            title = { Text("Share Storage Device?") },
+            text = {
+                Text(
+                    "This is a storage device. Sharing it will unmount it from " +
+                    "your phone, which may cause an \"unsafely removed\" warning. " +
+                    "\n\nTo avoid data loss, eject the storage in Android Settings " +
+                    "before sharing.\n\nContinue anyway?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showStorageWarning = null
+                    onStartServer(warnedDevice.name)
+                }) {
+                    Text("Share Anyway")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStorageWarning = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }

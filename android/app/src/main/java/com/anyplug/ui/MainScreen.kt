@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -16,6 +17,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -41,11 +43,13 @@ import com.anyplug.ui.components.StatusCard
 @Composable
 fun MainScreen(
     onStartServer: (deviceName: String) -> Unit,
+    onStopService: () -> Unit,
     onConnectToServer: (host: String, busId: String) -> Unit,
     discoveredServers: List<DiscoveredServer>,
     localDevices: List<LocalUsbDevice>,
     isServiceRunning: Boolean,
     serviceModeText: String,
+    sharedDeviceName: String = "",
 ) {
     var selectedTab by remember { mutableStateOf(0) }
 
@@ -67,10 +71,11 @@ fun MainScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
         ) {
-            // ── Service status ──────────────────────────────────
+            // ── Service status (always visible — stable layout) ──
             StatusCard(
                 isRunning = isServiceRunning,
                 modeText = serviceModeText,
+                onStopClick = if (isServiceRunning) onStopService else null,
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -92,7 +97,11 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             when (selectedTab) {
-                0 -> ServerPanel(localDevices, onStartServer)
+                0 -> ServerPanel(
+                    localDevices = localDevices,
+                    onStartServer = onStartServer,
+                    sharedDeviceName = sharedDeviceName,
+                )
                 1 -> ClientPanel(discoveredServers, onConnectToServer)
             }
         }
@@ -105,7 +114,10 @@ fun MainScreen(
 private fun ServerPanel(
     localDevices: List<LocalUsbDevice>,
     onStartServer: (String) -> Unit,
+    sharedDeviceName: String,
 ) {
+    var showStorageWarning by remember { mutableStateOf<LocalUsbDevice?>(null) }
+
     SectionHeader("Local USB Devices")
 
     Spacer(modifier = Modifier.height(8.dp))
@@ -117,20 +129,62 @@ private fun ServerPanel(
         )
     } else {
         localDevices.forEach { device ->
+            val isThisDeviceShared = sharedDeviceName == device.name
+
             DeviceCard(
                 title = device.name,
                 subtitle = "${device.vid.toString(16).padStart(4, '0')}:" +
                     device.pid.toString(16).padStart(4, '0'),
-                actionLabel = "Share",
-                onAction = { onStartServer(device.name) },
+                actionLabel = if (isThisDeviceShared) "Stop Sharing" else "Share",
+                isDestructive = isThisDeviceShared,
+                onAction = {
+                    if (!isThisDeviceShared) {
+                        if (device.isMassStorage) {
+                            showStorageWarning = device
+                        } else {
+                            onStartServer(device.name)
+                        }
+                    }
+                },
                 modifier = Modifier.padding(vertical = 4.dp),
             )
         }
+    }
+
+    // ── Mass-storage warning dialog ─────────────────────────
+    val warnedDevice = showStorageWarning
+    if (warnedDevice != null) {
+        AlertDialog(
+            onDismissRequest = { showStorageWarning = null },
+            title = { Text("Share Storage Device?") },
+            text = {
+                Text(
+                    "This is a storage device. Sharing it will unmount it from " +
+                    "your phone, which may cause an \"unsafely removed\" warning. " +
+                    "\n\nTo avoid data loss, eject the storage in Android Settings " +
+                    "before sharing.\n\nContinue anyway?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showStorageWarning = null
+                    onStartServer(warnedDevice.name)
+                }) {
+                    Text("Share Anyway")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showStorageWarning = null }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
 // ── Client panel ───────────────────────────────────────────────────────
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
 private fun ClientPanel(
     discoveredServers: List<DiscoveredServer>,

@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +54,7 @@ fun TvButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isDestructive: Boolean = false,
 ) {
     Button(
         onClick = onClick,
@@ -60,8 +62,14 @@ fun TvButton(
             .heightIn(min = 48.dp)
             .widthIn(min = 140.dp),
         colors = ButtonDefaults.buttonColors(
-            containerColor = MaterialTheme.colorScheme.primary,
-            contentColor = MaterialTheme.colorScheme.onPrimary,
+            containerColor = if (isDestructive)
+                MaterialTheme.colorScheme.error
+            else
+                MaterialTheme.colorScheme.primary,
+            contentColor = if (isDestructive)
+                MaterialTheme.colorScheme.onError
+            else
+                MaterialTheme.colorScheme.onPrimary,
         ),
         shape = RoundedCornerShape(8.dp),
     ) {
@@ -110,6 +118,9 @@ fun TvCard(
 /**
  * Row-style device card with title, subtitle, and action button.
  * Large targets enable easy D-pad selection.
+ *
+ * @param isDestructive When true, the action button uses error/destructive
+ *   styling (used for "Stop Sharing" state).
  */
 @Composable
 fun TvDeviceCard(
@@ -117,6 +128,7 @@ fun TvDeviceCard(
     subtitle: String,
     actionLabel: String,
     onAction: () -> Unit,
+    isDestructive: Boolean = false,
 ) {
     TvCard {
         Row(
@@ -142,7 +154,11 @@ fun TvDeviceCard(
                 )
             }
             Spacer(modifier = Modifier.width(24.dp))
-            TvButton(label = actionLabel, onClick = onAction)
+            TvButton(
+                label = actionLabel,
+                onClick = onAction,
+                isDestructive = isDestructive,
+            )
         }
     }
 }
@@ -195,13 +211,18 @@ fun TvEmptyState(
 
 /**
  * Compact card showing the current USB/IP service status.
+ *
  * Uses a green/gray dot indicator with descriptive text.
+ * Shows a "Stop" button when the service is running.
+ *
+ * The card is always visible to keep the layout stable.
  */
 @Composable
 fun TvStatusCard(
     isRunning: Boolean,
     modeText: String,
     modifier: Modifier = Modifier,
+    onStopClick: (() -> Unit)? = null,
 ) {
     val dotColor = if (isRunning)
         MaterialTheme.colorScheme.primary
@@ -228,10 +249,23 @@ fun TvStatusCard(
                 color = dotColor,
                 style = MaterialTheme.typography.titleLarge,
             )
+            // Status text — takes remaining space
             Text(
                 text = if (isRunning) "Running — $modeText" else "Stopped",
                 style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
             )
+            // Stop button — only shown when running
+            if (onStopClick != null) {
+                TextButton(onClick = onStopClick) {
+                    Text(
+                        text = "Stop",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+            }
         }
     }
 }

@@ -100,11 +100,38 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
 
     // ─── Public API ──────────────────────────────────────────
 
+    // ─── State queries ─────────────────────────────────────────
+
+    /**
+     * The name of the device currently being shared (server mode) or
+     * the host being connected to (client mode). Empty when idle.
+     */
+    private var sharedDeviceName: String = ""
+
+    /**
+     * True when the service is actively sharing or importing a device.
+     */
+    fun isRunning(): Boolean = currentMode != Mode.IDLE
+
+    /**
+     * Returns a human-readable mode description for the StatusCard.
+     * Example: "Server — sharing USB Drive" or "Client — connected to 192.168.1.5"
+     */
+    fun getModeText(): String = when (currentMode) {
+        Mode.SERVER -> "Server — sharing $sharedDeviceName"
+        Mode.CLIENT -> "Client — connected"
+        Mode.IDLE -> ""
+    }
+
+    /** The name of the device currently being exported, or empty when idle. */
+    fun getSharedDeviceName(): String = sharedDeviceName
+
     /**
      * Start exporting a USB device. The service becomes a USB/IP server.
      */
-    fun startServer(@Suppress("UNUSED_PARAMETER") deviceName: String, vid: Int, pid: Int) {
+    fun startServer(deviceName: String, vid: Int, pid: Int) {
         currentMode = Mode.SERVER
+        sharedDeviceName = deviceName
         wakeLock?.acquire()
 
         serverRunner = UsbIpServer(
@@ -122,6 +149,7 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
      */
     fun startClient(serverHost: String, serverPort: Int, busId: String) {
         currentMode = Mode.CLIENT
+        sharedDeviceName = "$serverHost:$serverPort"
         wakeLock?.acquire()
 
         clientRunner = UsbIpClient(
@@ -140,12 +168,14 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
      */
     fun stop() {
         currentMode = Mode.IDLE
+        sharedDeviceName = ""
         serverRunner?.stop()
         clientRunner?.stop()
         wakeLock?.release()
         transferWakeLock?.release()
         stopSelf()
     }
+
     /**
      * Acquire a reference-counted wake lock for an individual URB transfer.
      *
