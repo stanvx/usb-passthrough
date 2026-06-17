@@ -16,6 +16,7 @@ use usbip_core::error::{ErrorKind, UsbIpError, UsbIpResult};
 use usbip_core::protocol::UsbIpDeviceEntry;
 use usbip_core::urb::UsbIpCmdSubmit;
 
+use crate::api::DeviceLister;
 use crate::usb_backend::{LibusbBackend, UrbTransferResult, UsbBackend};
 
 /// Manages USB devices for the server, delegating to a backend.
@@ -105,6 +106,12 @@ impl UsbDeviceManager {
         self.backend.release_device(busid)?;
         debug!("Released device: {}", busid);
         Ok(())
+    }
+}
+
+impl DeviceLister for UsbDeviceManager {
+    fn list_devices(&self) -> Vec<UsbIpDeviceEntry> {
+        self.list_devices()
     }
 }
 

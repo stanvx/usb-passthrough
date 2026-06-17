@@ -36,7 +36,7 @@ use usbip_core::urb::UsbIpCmdSubmit;
 use crate::api;
 use crate::bandwidth::BandwidthLimit;
 use crate::batcher::UrbBatcher;
-use crate::discovery::MdnsAdvertiser;
+use crate::discovery::{MdnsAdvertiser, MdnsBrowserImpl};
 use crate::urb_executor::UrbExecutor;
 use crate::usb::UsbDeviceManager;
 use crate::usb_backend::UsbBackend;
@@ -137,23 +137,64 @@ impl Server {
         self.usb.list_devices()
     }
 
+    /// Build the `AppState` shared by the REST API handlers, wired to
+    /// this server's live `UsbDeviceManager` and a real `MdnsBrowserImpl`.
+    ///
+    /// Extracted from `run_with_api` so tests can exercise the same
+    /// production wiring without binding to a TCP port.
+    pub fn app_state(&self, api_port: u16) -> api::AppState {
+        struct NoopBrowser;
+        impl api::MdnsBrowser for NoopBrowser {
+            fn browse(&self, _: u32) -> Vec<api::DiscoveredServer> {
+                Vec::new()
+            }
+        }
+        struct UnsupportedImporter;
+        impl api::RemoteImporter for UnsupportedImporter {
+            fn import(
+                &self,
+                _host: &str,
+                _port: u16,
+                _busid: &str,
+            ) -> UsbIpResult<UsbIpDeviceEntry> {
+                Err(usbip_core::error::UsbIpError::from(ErrorKind::NotSupported(
+                    "remote import requires a host with VHCI driver (Linux)".into(),
+                )))
+            }
+        }
+
+        let device_lister: Arc<dyn api::DeviceLister + Send + Sync> = self.usb.clone();
+        let browser: Arc<dyn api::MdnsBrowser + Send + Sync> = match MdnsBrowserImpl::new() {
+            Ok(b) => Arc::new(b),
+            // Fall back to a no-op browser if mDNS init fails on this
+            // platform (e.g., headless CI without avahi). Scans will
+            // return empty, devices still work.
+            Err(_) => Arc::new(NoopBrowser),
+        };
+        let importer: Arc<dyn api::RemoteImporter + Send + Sync> = Arc::new(UnsupportedImporter);
+        api::AppState {
+            start_time: std::time::Instant::now(),
+            exports: self.exports.clone(),
+            device_lister,
+            mdns_browser: browser,
+            remote_importer: importer,
+            config: Arc::new(tokio::sync::RwLock::new(api::ApiConfig {
+                bind_address: self.config.bind_address.clone(),
+                port: self.config.port,
+                api_port,
+                encryption_enabled: self.config.encryption_enabled,
+            })),
+            latency_tx: api::new_latency_sender(),
+        }
+    }
+
     /// Run the USB/IP server together with the REST API.
     ///
     /// The API is served on `api_port` (default: 3241).
     pub async fn run_with_api(&self, api_port: u16) -> UsbIpResult<()> {
-        // Build the API router
-        let api_state = api::AppState {
-            start_time: std::time::Instant::now(),
-            exports: self.exports.clone(),
-            mock_devices: None,
-            config: api::ApiConfig {
-                bind_address: self.config.bind_address.clone(),
-                port: self.config.port,
-                encryption_enabled: self.config.encryption_enabled,
-            },
-        };
+        let api_state = self.app_state(api_port);
 
-        let api_router = api::build_router(api_state);
+        let api_router = api::build_router(Arc::new(api_state));
         let api_addr = format!("{}:{}", self.config.bind_address, api_port);
 
         // Start both servers in separate tasks using tokio::select!

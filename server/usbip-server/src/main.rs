@@ -6,40 +6,51 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use usbip_core::error::UsbIpResult;
 use usbip_server::{metrics, BandwidthLimit, Server, ServerConfig};
 
-#[derive(Parser)]
+#[derive(Parser, Debug, Clone, PartialEq)]
 #[command(name = "usbip-server")]
 #[command(about = "USB/IP Server — Export USB devices over the network")]
-struct Cli {
+pub struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    pub command: Option<Commands>,
 
     /// Bind address (default: 0.0.0.0)
     #[arg(short, long, default_value = "0.0.0.0")]
-    bind: String,
+    pub bind: String,
 
     /// TCP port (default: 3240)
     #[arg(short, long, default_value_t = 3240)]
-    port: u16,
+    pub port: u16,
+
+    /// REST API + WebSocket port. When set, the server runs the USB/IP
+    /// wire listener and the axum API in parallel. Omit for wire-only.
+    #[arg(long, default_missing_value = "3241", num_args = 0..=1)]
+    pub api_port: Option<u16>,
 
     /// Only allow these VID:PID pairs (can be specified multiple times)
     #[arg(long, value_parser = parse_vid_pid)]
-    allow: Vec<(u16, u16)>,
+    pub allow: Vec<(u16, u16)>,
 
     /// Disable connection confirmation prompt
     #[arg(long)]
-    no_confirm: bool,
+    pub no_confirm: bool,
 
     /// Enable AES-256-GCM encryption
     #[arg(long)]
-    encrypt: bool,
+    pub encrypt: bool,
 
     /// Prometheus metrics port (if set, serves /metrics on this port)
     #[arg(long)]
-    metrics_port: Option<u16>,
+    pub metrics_port: Option<u16>,
 }
 
-#[derive(Subcommand)]
-enum Commands {
+impl Default for Cli {
+    fn default() -> Self {
+        Self::parse_from(["usbip-server"])
+    }
+}
+
+#[derive(Subcommand, Debug, Clone, PartialEq)]
+pub enum Commands {
     /// List exportable USB devices
     List,
 }
@@ -88,11 +99,9 @@ async fn main() -> UsbIpResult<()> {
         let metrics_listener = tokio::net::TcpListener::bind(&metrics_addr).await?;
         tracing::info!("Prometheus metrics listening on {}", metrics_addr);
         tokio::spawn(async move {
-            axum::serve(metrics_listener, metrics_router)
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::error!("Metrics server error: {}", e);
-                });
+            axum::serve(metrics_listener, metrics_router).await.unwrap_or_else(|e| {
+                tracing::error!("Metrics server error: {}", e);
+            });
         });
     }
 
@@ -112,9 +121,41 @@ async fn main() -> UsbIpResult<()> {
             }
         },
         None => {
-            server.run().await?;
+            if let Some(api_port) = cli.api_port {
+                server.run_with_api(api_port).await?;
+            } else {
+                server.run().await?;
+            }
         },
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cli_default_has_no_api_port() {
+        // Omitting --api-port: wire-only behaviour (matches today's default).
+        let cli = Cli::parse_from(["usbip-server"]);
+        assert_eq!(cli.api_port, None, "no --api-port should mean None");
+        assert_eq!(cli.port, 3240);
+        assert_eq!(cli.bind, "0.0.0.0");
+    }
+
+    #[test]
+    fn cli_api_port_with_value() {
+        // `--api-port 5000` → Some(5000).
+        let cli = Cli::parse_from(["usbip-server", "--api-port", "5000"]);
+        assert_eq!(cli.api_port, Some(5000));
+    }
+
+    #[test]
+    fn cli_api_port_without_value_defaults_to_3241() {
+        // `--api-port` (no value) → Some(3241), per acceptance criteria.
+        let cli = Cli::parse_from(["usbip-server", "--api-port"]);
+        assert_eq!(cli.api_port, Some(3241));
+    }
 }

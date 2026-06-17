@@ -62,17 +62,44 @@ fn test_app() -> axum::Router {
 fn test_app_with_exports(exports: HashMap<String, (SocketAddr, UsbIpDeviceEntry)>) -> axum::Router {
     use usbip_server::api;
 
+    struct FailingImporter;
+    impl api::RemoteImporter for FailingImporter {
+        fn import(
+            &self,
+            _host: &str,
+            _port: u16,
+            _busid: &str,
+        ) -> usbip_core::error::UsbIpResult<UsbIpDeviceEntry> {
+            Err(usbip_core::error::UsbIpError::from(usbip_core::error::ErrorKind::DeviceNotFound(
+                "test fixture".into(),
+            )))
+        }
+    }
+
     let state = api::AppState {
         start_time: std::time::Instant::now(),
         exports: Arc::new(Mutex::new(exports)),
-        mock_devices: Some(Arc::new(MockDeviceManager)),
-        config: api::ApiConfig {
+        device_lister: Arc::new(MockDeviceManager),
+        mdns_browser: Arc::new(EmptyBrowser),
+        remote_importer: Arc::new(FailingImporter),
+        config: Arc::new(tokio::sync::RwLock::new(api::ApiConfig {
             bind_address: "0.0.0.0".to_string(),
             port: 3240,
+            api_port: 3241,
             encryption_enabled: false,
-        },
+        })),
+        latency_tx: usbip_server::api::new_latency_sender(),
     };
-    api::build_router(state)
+    api::build_router(Arc::new(state))
+}
+
+/// Empty mDNS browser for tests that don't exercise /api/scan.
+struct EmptyBrowser;
+
+impl usbip_server::api::MdnsBrowser for EmptyBrowser {
+    fn browse(&self, _timeout_secs: u32) -> Vec<usbip_server::api::DiscoveredServer> {
+        Vec::new()
+    }
 }
 
 /// Convenience: issue a GET and return the JSON body as a `serde_json::Value`.
@@ -185,7 +212,8 @@ async fn test_get_config_returns_200() {
     assert_eq!(body["encryption_enabled"], false);
 }
 
-/// `POST /api/connect` returns 501 with structured error (not yet implemented).
+/// `POST /api/connect` surfaces importer failures as a structured error
+/// (5xx + `correlation_id` + `category` + `message`).
 #[tokio::test]
 async fn test_post_connect_returns_501() {
     let app = test_app();
@@ -200,12 +228,15 @@ async fn test_post_connect_returns_501() {
     )
     .await;
 
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    // The fixture's `FailingImporter` returns a permanent error, so the
+    // handler responds 500 with a structured `ApiErrorResponse`. The
+    // 501 path existed only while the handler was a stub.
+    assert!(status.is_server_error(), "expected a 5xx failure, got {}", status);
     assert_structured_error(&body);
-    assert!(body["message"].as_str().unwrap().contains("not yet implemented"));
 }
 
-/// `POST /api/disconnect` returns 501 with structured error (not yet implemented).
+/// `POST /api/disconnect` for an unknown busid returns 404 with a
+/// structured `ApiErrorResponse`.
 #[tokio::test]
 async fn test_post_disconnect_returns_501() {
     let app = test_app();
@@ -218,9 +249,8 @@ async fn test_post_disconnect_returns_501() {
     )
     .await;
 
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(status, StatusCode::NOT_FOUND);
     assert_structured_error(&body);
-    assert!(body["message"].as_str().unwrap().contains("not yet implemented"));
 }
 
 /// All error responses should include correlation_id, category, and message.
