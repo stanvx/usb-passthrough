@@ -1,10 +1,21 @@
-import { Device, ServerStatus, ServerConfig, ConnectRequest, DisconnectRequest } from './types';
+import type { Device, ServerStatus, ServerConfig, ConnectRequest, DisconnectRequest, ScanResult } from './types';
 
-// Default to the same host:port the page was loaded from
-const API_BASE = '';
+const LS_KEY = 'anyplug_api_url';
+
+export function getApiBase(): string {
+  if (typeof window === 'undefined') {
+    return process.env.NEXT_PUBLIC_API_BASE || '';
+  }
+  return process.env.NEXT_PUBLIC_API_BASE || localStorage.getItem(LS_KEY) || '';
+}
+
+export function setApiBase(url: string): void {
+  localStorage.setItem(LS_KEY, url);
+}
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const base = getApiBase();
+  const res = await fetch(`${base}${path}`, {
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     ...options,
   });
@@ -27,6 +38,17 @@ export async function getConfig(): Promise<ServerConfig> {
   return apiFetch<ServerConfig>('/api/config');
 }
 
+export async function updateConfig(config: Partial<ServerConfig>): Promise<ServerConfig> {
+  return apiFetch<ServerConfig>('/api/config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}
+
+export async function scanServers(): Promise<ScanResult> {
+  return apiFetch<ScanResult>('/api/scan', { method: 'POST' });
+}
+
 export async function connectDevice(req: ConnectRequest): Promise<void> {
   await apiFetch<void>('/api/connect', {
     method: 'POST',
@@ -42,7 +64,8 @@ export async function disconnectDevice(req: DisconnectRequest): Promise<void> {
 }
 
 export function connectEventsWebSocket(): WebSocket {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const host = window.location.host;
+  const base = getApiBase();
+  const host = base.replace(/^https?:\/\//, '');
+  const protocol = base.startsWith('https') ? 'wss:' : 'ws:';
   return new WebSocket(`${protocol}//${host}/api/events`);
 }

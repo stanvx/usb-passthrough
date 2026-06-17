@@ -2,8 +2,6 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import {
-  LineChart,
-  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -14,7 +12,7 @@ import {
 } from 'recharts';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import type { WsEvent, LatencySample } from '@/lib/types';
-import { Activity, TrendingDown, TrendingUp, Clock } from 'lucide-react';
+import { Activity, TrendingDown, TrendingUp, Clock, Eye, EyeOff } from 'lucide-react';
 
 const MAX_SAMPLES = 120; // 2 minutes at 1Hz
 
@@ -27,6 +25,8 @@ export default function LatencyDashboard() {
   const [maxLatency, setMaxLatency] = useState<number>(0);
   const [packetLoss, setPacketLoss] = useState<number>(0);
   const [totalPackets, setTotalPackets] = useState(0);
+  const [showDemo, setShowDemo] = useState(false);
+  const [demoActive, setDemoActive] = useState(false);
   const chartKey = useRef(0);
 
   // Process WebSocket events for latency data
@@ -81,11 +81,20 @@ export default function LatencyDashboard() {
     chartKey.current++;
   }, [samples]);
 
-  // Simulate latency data if WebSocket hasn't sent any
+  // Demo data toggle
   useEffect(() => {
-    if (!isConnected || samples.length > 0) return;
+    if (!showDemo) {
+      if (!demoActive) return;
+      setSamples([]);
+      setCurrentLatency(null);
+      setAvgLatency(0);
+      setMinLatency(Infinity);
+      setMaxLatency(0);
+      setTotalPackets(0);
+      setDemoActive(false);
+      return;
+    }
 
-    // Generate demo data to show the chart works
     const demo = Array.from({ length: 30 }, (_, i) => ({
       time: `${i}s`,
       latency_us: 400 + Math.random() * 300 + Math.sin(i / 3) * 100,
@@ -95,9 +104,10 @@ export default function LatencyDashboard() {
     setAvgLatency(480);
     setMinLatency(310);
     setMaxLatency(720);
+    setDemoActive(true);
 
     return () => {};
-  }, [isConnected, samples.length]);
+  }, [showDemo]);
 
   const formatLatency = (us: number) => {
     if (us >= 1000) return `${(us / 1000).toFixed(1)} ms`;
@@ -106,11 +116,24 @@ export default function LatencyDashboard() {
 
   return (
     <div className="animate-fade-in">
-      <div className="mb-6">
-        <h1 className="text-xl font-bold text-white">Latency Dashboard</h1>
-        <p className="text-sm text-[#8b8fa3] mt-1">
-          Real-time USB/IP round-trip latency monitoring
-        </p>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-bold text-white">Latency Dashboard</h1>
+          <p className="text-sm text-[#8b8fa3] mt-1">
+            Real-time USB/IP round-trip latency monitoring
+          </p>
+        </div>
+        <button
+          onClick={() => setShowDemo((p) => !p)}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors ${
+            showDemo
+              ? 'bg-yellow-400/10 border border-yellow-400/20 text-yellow-400'
+              : 'bg-[#1a1d28] border border-[#2a2e3a] text-[#8b8fa3] hover:text-white'
+          }`}
+        >
+          {showDemo ? <EyeOff size={14} /> : <Eye size={14} />}
+          {showDemo ? 'Hide Demo Data' : 'Show Demo Data'}
+        </button>
       </div>
 
       {/* Stats cards */}
@@ -150,6 +173,13 @@ export default function LatencyDashboard() {
         <h2 className="text-sm font-semibold text-white mb-4">
           Round-Trip Latency Over Time
         </h2>
+        {samples.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-72 text-[#6b6f83]">
+            <Activity size={36} className="mb-3 opacity-50" />
+            <p className="text-sm">Waiting for telemetry...</p>
+            <p className="text-xs mt-1">Latency data appears once a device is connected and active</p>
+          </div>
+        ) : (
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
@@ -197,6 +227,7 @@ export default function LatencyDashboard() {
             </AreaChart>
           </ResponsiveContainer>
         </div>
+      )}
       </div>
 
       {/* Connection status and packet stats */}

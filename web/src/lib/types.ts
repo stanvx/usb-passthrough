@@ -35,6 +35,19 @@ export interface DisconnectRequest {
   busid: string;
 }
 
+export interface RemoteDevice {
+  host: string;
+  port: number;
+  busid: string;
+  vid: number;
+  pid: number;
+  path: string;
+}
+
+export interface ScanResult {
+  devices: RemoteDevice[];
+}
+
 export interface ApiError {
   error: string;
   correlation_id?: string;

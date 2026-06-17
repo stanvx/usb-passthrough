@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { getDevices, connectDevice, disconnectDevice } from '@/lib/api';
 import type { Device, ConnectionEvent } from '@/lib/types';
+import { getStoredTarget } from '@/lib/target';
 import {
   Plug,
   PlugZap,
@@ -22,6 +23,7 @@ export default function ConnectionManager({ onEvent }: ConnectionManagerProps) {
   const [loading, setLoading] = useState(true);
   const [actionBusId, setActionBusId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const target = getStoredTarget();
 
   const fetchDevices = useCallback(async () => {
     try {
@@ -44,8 +46,9 @@ export default function ConnectionManager({ onEvent }: ConnectionManagerProps) {
     setActionBusId(busid);
     setError(null);
     try {
-      // Connect to localhost on default USB/IP port
-      await connectDevice({ host: 'localhost', port: 3240, busid });
+      const host = target?.host || 'localhost';
+      const port = target?.port || 3240;
+      await connectDevice({ host, port, busid });
       await fetchDevices();
       onEvent?.({
         busid,
@@ -105,6 +108,14 @@ export default function ConnectionManager({ onEvent }: ConnectionManagerProps) {
       {error && (
         <div className="mb-4 p-4 rounded-lg bg-[#dc2626]/10 border border-[#dc2626]/20 text-sm text-[#dc2626]">
           {error}
+        </div>
+      )}
+
+      {target && (
+        <div className="mb-4 p-3 rounded-lg bg-anyplug-600/10 border border-anyplug-600/20 text-sm">
+          <span className="text-[#8b8fa3]">Remote server: </span>
+          <span className="text-anyplug-300 font-medium">{target.host}:{target.port}</span>
+          <span className="text-[#6b6f83] ml-2 text-xs">(change in Scan)</span>
         </div>
       )}
 

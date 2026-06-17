@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -9,6 +9,9 @@ import {
   Activity,
   Settings,
   Heart,
+  Search,
+  WifiOff,
+  X,
 } from 'lucide-react';
 
 interface NavItemProps {
@@ -41,9 +44,12 @@ interface LayoutProps {
 
 export default function Layout({ children, wsConnected }: LayoutProps) {
   const pathname = usePathname();
+  const [dismissed, setDismissed] = useState(false);
+  const showBanner = !wsConnected && !dismissed;
 
   const navItems = [
-    { href: '/', icon: <Monitor size={18} />, label: 'Devices' },
+    { href: '/devices', icon: <Monitor size={18} />, label: 'Devices' },
+    { href: '/scan', icon: <Search size={18} />, label: 'Scan' },
     { href: '/connections', icon: <Radio size={18} />, label: 'Connections' },
     { href: '/latency', icon: <Activity size={18} />, label: 'Latency' },
     { href: '/config', icon: <Settings size={18} />, label: 'Config' },
@@ -93,8 +99,33 @@ export default function Layout({ children, wsConnected }: LayoutProps) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto p-6">
-        {children}
+      <main className="flex-1 overflow-y-auto">
+        {showBanner && (
+          <div className="flex items-center justify-between px-6 py-2.5 bg-yellow-400/10 border-b border-yellow-400/20">
+            <div className="flex items-center gap-2 text-sm text-yellow-400">
+              <WifiOff size={14} />
+              <span>
+                Cannot reach API server |{' '}
+                <button
+                  onClick={() => {
+                    setDismissed(true);
+                    window.location.reload();
+                  }}
+                  className="underline hover:text-yellow-300"
+                >
+                  Reconfigure
+                </button>
+              </span>
+            </div>
+            <button
+              onClick={() => setDismissed(true)}
+              className="text-yellow-400/60 hover:text-yellow-400"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+        <div className="p-6">{children}</div>
       </main>
     </div>
   );

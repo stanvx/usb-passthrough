@@ -7,7 +7,7 @@ export default function HomePage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace('/devices');
+    router.replace('/scan');
   }, [router]);
 
   return (
