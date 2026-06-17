@@ -71,3 +71,18 @@ Headless runtime that survives reboots with no UI after setup.
 Windows Service / Android foreground service / systemd unit.
 GUI is a companion, not a replacement.
 _Avoid_: Daemon (Unix-specific), background app (ambiguous)
+
+**Wire port** (default 3240):
+TCP port carrying raw USB/IP protocol packets — URBs, descriptors,
+isochronous data. The core passthrough data path between server and client.
+_Avoid_: USB port, data port, main port
+
+**API port** (default 3241):
+TCP port for the REST API and WebSocket event stream (latency telemetry,
+connection state). Only active when `--api-port` is set.
+_Avoid_: Admin port, management port, HTTP port
+
+**mDNS port** (default 5353):
+UDP port for `_usbip._tcp.local` service advertisements. Link-local only —
+does not cross subnets or VLANs.
+_Avoid_: Discovery port, broadcast port

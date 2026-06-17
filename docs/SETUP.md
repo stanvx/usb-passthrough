@@ -2,7 +2,7 @@
 
 Complete setup instructions for the USB/IP passthrough system on Linux, Windows, and Android.
 
-> **Protocol:** USB/IP v1.1.1 (`0x0111`) on TCP port 3240
+> **Protocol:** USB/IP v1.1.1 (`0x0111`) on TCP [port 3240](api/PORTS.md) (wire port)
 > **mDNS service type:** `_usbip._tcp.local.`
 
 ---

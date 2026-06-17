@@ -52,7 +52,7 @@ The server reads configuration from these sources (highest priority first):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `USBIP_BIND_ADDRESS` | `0.0.0.0` | Address to bind the server socket |
-| `USBIP_PORT` | `3240` | TCP port for USB/IP traffic |
+| `USBIP_PORT` | `3240` | TCP port for USB/IP traffic — see [PORTS.md](../docs/api/PORTS.md) for the full port model |
 | `USBIP_ALLOWED_DEVICES` | (empty — allow all) | Comma-separated VID:PID pairs |
 | `USBIP_ENCRYPTION` | `false` | Enable AES-256-GCM encryption |
 

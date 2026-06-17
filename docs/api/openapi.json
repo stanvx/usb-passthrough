@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "AnyPlug USB/IP Server API",
-    "description": "REST API + WebSocket events for managing a USB/IP server.\n\nAll error responses follow the structured format with:\n- `correlation_id` (UUIDv7) — trace the error through logs\n- `category` — `transient`, `permanent`, or `fatal`\n- `message` — human-readable description",
+    "description": "REST API + WebSocket events for managing a USB/IP server.\n\nAll error responses follow the structured format with:\n- `correlation_id` (UUIDv7) — trace the error through logs\n- `category` — `transient`, `permanent`, or `fatal`\n- `message` — human-readable description\n\nFor port documentation see [PORTS.md](./PORTS.md).",
     "version": "0.1.0"
   },
   "servers": [
@@ -62,7 +62,7 @@
     },
     "/api/config": {
       "get": {
-        "summary": "Server configuration",
+        "summary": "Read server configuration",
         "description": "Returns current server configuration with secrets redacted.",
         "operationId": "getConfig",
         "responses": {
@@ -75,12 +75,51 @@
             }
           }
         }
+      },
+      "put": {
+        "summary": "Update server configuration",
+        "description": "Partially update server configuration. Only the fields included in the request body are changed. Port values are validated and return a structured 400 error if out of range.",
+        "operationId": "putConfig",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ConfigUpdateRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated configuration",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiConfig" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiErrorResponse" }
+              }
+            }
+          }
+        }
       }
     },
     "/api/connect": {
       "post": {
         "summary": "Connect to remote device",
-        "description": "Connect to a device on a remote USB/IP server.",
+        "description": "Import a device from a remote USB/IP server. Returns the imported device's bus ID and identifiers.",
         "operationId": "postConnect",
         "requestBody": {
           "required": true,
@@ -92,10 +131,15 @@
         },
         "responses": {
           "200": {
-            "description": "Connected successfully"
+            "description": "Device imported successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConnectResponse" }
+              }
+            }
           },
-          "501": {
-            "description": "Not yet implemented",
+          "500": {
+            "description": "Import failed",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ApiErrorResponse" }
@@ -108,7 +152,7 @@
     "/api/disconnect": {
       "post": {
         "summary": "Disconnect a device",
-        "description": "Disconnect a specific exported device by busid.",
+        "description": "Release an imported device by busid.",
         "operationId": "postDisconnect",
         "requestBody": {
           "required": true,
@@ -122,8 +166,16 @@
           "200": {
             "description": "Disconnected successfully"
           },
-          "501": {
-            "description": "Not yet implemented",
+          "404": {
+            "description": "Device not found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ApiErrorResponse" }
+              }
+            }
+          },
+          "500": {
+            "description": "Disconnect failed",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ApiErrorResponse" }
@@ -133,10 +185,38 @@
         }
       }
     },
+    "/api/scan": {
+      "post": {
+        "summary": "Discover USB/IP servers on LAN",
+        "description": "Browse the local network for USB/IP servers via mDNS (`_usbip._tcp.local`). Returns discovered servers and their device listings.",
+        "operationId": "postScan",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ScanRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "List of discovered servers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/DiscoveredServer" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/events": {
       "get": {
         "summary": "WebSocket event stream",
-        "description": "Upgrade to WebSocket. Streams real-time events:\n\n- `device-attach` — a USB device was physically attached\n- `device-detach` — a USB device was physically removed\n- `connection-state-change` — a client connected/disconnected\n- `error` — a server error occurred\n\nEach event is a JSON message:\n```json\n{\"event\": \"device-attach\", \"data\": {\"busid\": \"1-1\", \"vid\": 1133, \"pid\": 49761}}\n```",
+        "description": "Upgrade to WebSocket. Streams real-time events as JSON text frames:\n\n- `connected` — WebSocket handshake complete\n- `latency` — per-URB round-trip latency sample\n  ```json\n  {\"type\":\"latency\",\"payload\":{\"time\":\"12:34:56\",\"latency_us\":450,\"device\":\"1-1\"}}\n  ```\n- `error` — a server error occurred\n\nEach frame is a JSON object with `type` (string) and `payload` (object) fields.",
         "operationId": "wsEvents"
       }
     },
@@ -237,22 +317,59 @@
       },
       "ApiConfig": {
         "type": "object",
-        "required": ["bind_address", "port", "encryption_enabled"],
+        "required": ["bind_address", "port", "api_port", "encryption_enabled"],
         "properties": {
           "bind_address": {
             "type": "string",
-            "description": "Server bind address",
+            "description": "Server bind address for all ports",
             "example": "0.0.0.0"
           },
           "port": {
             "type": "integer",
-            "description": "USB/IP TCP port",
+            "description": "Wire port: USB/IP TCP port for core protocol traffic",
+            "minimum": 1,
+            "maximum": 65535,
             "example": 3240
+          },
+          "api_port": {
+            "type": "integer",
+            "description": "API port: REST API and WebSocket port",
+            "minimum": 1,
+            "maximum": 65535,
+            "example": 3241
           },
           "encryption_enabled": {
             "type": "boolean",
-            "description": "Whether AES-256-GCM encryption is enabled",
+            "description": "Whether AES-256-GCM encryption is enabled for USB/IP traffic",
             "example": false
+          }
+        }
+      },
+      "ConfigUpdateRequest": {
+        "type": "object",
+        "description": "Partial update to server configuration. Only included fields are changed.",
+        "properties": {
+          "bind_address": {
+            "type": "string",
+            "description": "Server bind address"
+          },
+          "port": {
+            "type": "integer",
+            "description": "Wire port: USB/IP TCP port",
+            "minimum": 1,
+            "maximum": 65535,
+            "example": 3240
+          },
+          "api_port": {
+            "type": "integer",
+            "description": "API port: REST API and WebSocket port",
+            "minimum": 1,
+            "maximum": 65535,
+            "example": 3241
+          },
+          "encryption_enabled": {
+            "type": "boolean",
+            "description": "Whether AES-256-GCM encryption is enabled"
           }
         }
       },
@@ -267,13 +384,41 @@
           },
           "port": {
             "type": "integer",
-            "description": "Remote server port",
+            "description": "Remote server wire port",
+            "minimum": 1,
+            "maximum": 65535,
             "example": 3240
           },
           "busid": {
             "type": "string",
             "description": "Device bus ID to connect to",
             "example": "1-1"
+          }
+        }
+      },
+      "ConnectResponse": {
+        "type": "object",
+        "required": ["busid", "vid", "pid", "status"],
+        "properties": {
+          "busid": {
+            "type": "string",
+            "description": "Imported device bus ID",
+            "example": "1-1"
+          },
+          "vid": {
+            "type": "integer",
+            "description": "USB vendor ID",
+            "example": 1133
+          },
+          "pid": {
+            "type": "integer",
+            "description": "USB product ID",
+            "example": 49761
+          },
+          "status": {
+            "type": "string",
+            "description": "Import status, always \"imported\" on success",
+            "example": "imported"
           }
         }
       },
@@ -285,6 +430,42 @@
             "type": "string",
             "description": "Device bus ID to disconnect",
             "example": "1-1"
+          }
+        }
+      },
+      "ScanRequest": {
+        "type": "object",
+        "description": "Scan parameters. All fields are optional.",
+        "properties": {
+          "timeout_secs": {
+            "type": "integer",
+            "description": "mDNS browse timeout in seconds (clamped to 1-30, default 5)",
+            "minimum": 1,
+            "maximum": 30,
+            "default": 5,
+            "example": 5
+          }
+        }
+      },
+      "DiscoveredServer": {
+        "type": "object",
+        "required": ["host", "port", "txt"],
+        "properties": {
+          "host": {
+            "type": "string",
+            "description": "Server hostname or IP",
+            "example": "192.168.1.100"
+          },
+          "port": {
+            "type": "integer",
+            "description": "Wire port of the remote server",
+            "example": 3240
+          },
+          "txt": {
+            "type": "object",
+            "description": "mDNS TXT record key-value pairs",
+            "additionalProperties": { "type": "string" },
+            "example": { "version": "0.1.0", "devices": "2" }
           }
         }
       },
@@ -305,7 +486,7 @@
           "message": {
             "type": "string",
             "description": "Human-readable error message",
-            "example": "Remote connection not yet implemented"
+            "example": "Remote connection failed: timeout"
           }
         }
       }

@@ -8,7 +8,7 @@ with encryption and compression extensions.
 ## 1. Transport
 
 ```
-TCP, port 3240 (IANA registered)
+TCP, port 3240 (IANA registered) — see [PORTS.md](docs/api/PORTS.md) for the full port model.
 All multi-byte integers: BIG-ENDIAN (network byte order)
 Exception: encapsulated USB payload is LITTLE-ENDIAN (USB native)
 
