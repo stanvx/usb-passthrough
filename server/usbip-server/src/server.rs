@@ -171,11 +171,16 @@ impl Server {
             device_lister,
             mdns_browser: browser,
             remote_importer: importer,
-            config: Arc::new(tokio::sync::RwLock::new(api::ApiConfig {
-                bind_address: self.config.bind_address.clone(),
-                port: self.config.port,
-                api_port,
-                encryption_enabled: self.config.encryption_enabled,
+            config: Arc::new(tokio::sync::RwLock::new({
+                // Load persisted server_id / server_name first so they
+                // survive restarts. CLI flags override bind_address,
+                // port, api_port, encryption_enabled at runtime.
+                let mut cfg = api::load_config();
+                cfg.bind_address = self.config.bind_address.clone();
+                cfg.port = self.config.port;
+                cfg.api_port = api_port;
+                cfg.encryption_enabled = self.config.encryption_enabled;
+                cfg
             })),
             latency_tx: api::new_latency_sender(),
         }

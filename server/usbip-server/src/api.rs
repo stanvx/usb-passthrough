@@ -123,6 +123,24 @@ pub struct ApiConfig {
     pub port: u16,
     pub api_port: u16,
     pub encryption_enabled: bool,
+    /// Stable per-server identifier (UUIDv7). Generated on first boot
+    /// and persisted to `server.toml`. Lets clients dedupe probes from
+    /// the same server behind multiple IPs (Tailscale, dual-NIC).
+    #[serde(default = "generate_server_id")]
+    pub server_id: String,
+    /// Human-readable name (hostname by default). The client shows
+    /// this in the discovery list so the user can pick the right server
+    /// when several are on the network.
+    #[serde(default = "default_server_name")]
+    pub server_name: String,
+}
+
+fn generate_server_id() -> String {
+    uuid::Uuid::now_v7().to_string()
+}
+
+fn default_server_name() -> String {
+    gethostname::gethostname().to_string_lossy().to_string()
 }
 
 impl Default for ApiConfig {
@@ -132,6 +150,8 @@ impl Default for ApiConfig {
             port: 3240,
             api_port: 3241,
             encryption_enabled: false,
+            server_id: generate_server_id(),
+            server_name: default_server_name(),
         }
     }
 }
@@ -145,6 +165,13 @@ pub(crate) struct StatusResponse {
     pub active_connections: usize,
     pub urb_throughput: u64,
     pub error_count: u64,
+    /// Stable per-server UUIDv7. Lets clients dedupe probes from the
+    /// same server across multiple network interfaces.
+    pub server_id: String,
+    /// Human-readable server name (hostname).
+    pub server_name: String,
+    /// Wire-protocol port (USB/IP, default 3240).
+    pub port: u16,
 }
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
@@ -219,6 +246,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 async fn get_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let uptime = state.start_time.elapsed().as_secs_f64();
     let active = state.exports.lock().await.len();
+    let cfg = state.config.read().await;
 
     Json(StatusResponse {
         status: "running".to_string(),
@@ -226,6 +254,9 @@ async fn get_status(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         active_connections: active,
         urb_throughput: 0,
         error_count: 0,
+        server_id: cfg.server_id.clone(),
+        server_name: cfg.server_name.clone(),
+        port: cfg.port,
     })
 }
 
@@ -554,5 +585,54 @@ fn to_api_error(err: &UsbIpError) -> ApiErrorResponse {
         correlation_id: err.correlation_id().to_string(),
         category: err.category().to_string(),
         message: format!("{}", err.kind()),
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn default_config_has_stable_shape() {
+        let cfg = ApiConfig::default();
+        // server_id should be a valid UUIDv7 (36 chars, version digit '7' at position 14).
+        assert_eq!(cfg.server_id.len(), 36);
+        assert_eq!(cfg.server_id.as_bytes()[14], b'7');
+        // server_name defaults to hostname (whatever that resolves to locally).
+        assert!(!cfg.server_name.is_empty());
+        // Defaults for the rest are unchanged.
+        assert_eq!(cfg.port, 3240);
+        assert_eq!(cfg.api_port, 3241);
+    }
+
+    #[test]
+    fn config_round_trips_through_toml() {
+        let original = ApiConfig {
+            server_id: "0190e4f0-1234-7234-8234-123456789abc".to_string(),
+            server_name: "test-host".to_string(),
+            ..ApiConfig::default()
+        };
+        let toml_str = toml::to_string(&original).unwrap();
+        let parsed: ApiConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.server_id, original.server_id);
+        assert_eq!(parsed.server_name, original.server_name);
+        assert_eq!(parsed.port, original.port);
+        assert_eq!(parsed.api_port, original.api_port);
+    }
+
+    #[test]
+    fn legacy_config_without_identity_fields_loads_with_defaults() {
+        // Old config from before server_id/server_name existed — must
+        // still parse, with the new fields filled in by serde defaults.
+        let legacy = r#"
+            bind_address = "0.0.0.0"
+            port = 3240
+            api_port = 3241
+            encryption_enabled = false
+        "#;
+        let parsed: ApiConfig = toml::from_str(legacy).unwrap();
+        assert_eq!(parsed.port, 3240);
+        assert_eq!(parsed.server_id.len(), 36);
+        assert!(!parsed.server_name.is_empty());
     }
 }
