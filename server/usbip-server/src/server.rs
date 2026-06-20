@@ -495,9 +495,9 @@ mod real_importer {
         ) -> usbip_core::error::UsbIpResult<UsbIpDeviceEntry> {
             let addr: SocketAddr =
                 format!("{host}:{port}").parse().map_err(|e: std::net::AddrParseError| {
-                    usbip_core::error::UsbIpError::from(usbip_core::error::ErrorKind::InvalidArg(
-                        format!("bad host:port: {e}"),
-                    ))
+                    usbip_core::error::UsbIpError::from(
+                        usbip_core::error::ErrorKind::InvalidMessage(format!("bad host:port: {e}")),
+                    )
                 })?;
             let client = self.client.clone();
             let busid_owned = busid.to_string();
@@ -542,7 +542,7 @@ mod real_importer {
         /// uses this is constructed when the API server starts a
         /// forwarder for an imported device.)
         #[allow(dead_code)]
-        pub async fn record(&self, busid: String, handle: JoinHandle<()>) {
+        async fn record(&self, busid: String, handle: JoinHandle<()>) {
             let mut map = self.handles.lock().await;
             map.insert(busid, handle);
         }
