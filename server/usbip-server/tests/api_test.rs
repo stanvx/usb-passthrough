@@ -74,6 +74,7 @@ fn test_app_with_exports(exports: HashMap<String, (SocketAddr, UsbIpDeviceEntry)
                 "test fixture".into(),
             )))
         }
+        fn abort(&self, _busid: &str) {}
     }
 
     let state = api::AppState {
@@ -314,4 +315,139 @@ async fn test_exported_device_shows_client() {
     assert_eq!(second["busid"], "1-2");
     assert_eq!(second["status"], "available");
     assert!(second["connected_client"].is_null());
+}
+
+/// `POST /api/connect` against a working importer returns 200 with the
+/// device entry shape and records the import in the exports map. The
+/// audit's acceptance criterion: the importer is actually called with
+/// the host/port/busid from the request body, and the response carries
+/// the imported VID/PID.
+#[tokio::test]
+async fn test_post_connect_calls_importer_and_records_export() {
+    use usbip_server::api::RemoteImporter;
+
+    struct RecordingImporter {
+        seen: std::sync::Arc<std::sync::Mutex<Vec<(String, u16, String)>>>,
+        entry: UsbIpDeviceEntry,
+    }
+    impl RemoteImporter for RecordingImporter {
+        fn import(
+            &self,
+            host: &str,
+            port: u16,
+            busid: &str,
+        ) -> usbip_core::error::UsbIpResult<UsbIpDeviceEntry> {
+            // Test version: push to a Vec so the test can assert the
+            // call happened. The trait method is synchronous so a
+            // std::sync::Mutex is the right primitive.
+            self.seen.lock().unwrap().push((host.into(), port, busid.into()));
+            Ok(self.entry.clone())
+        }
+        fn abort(&self, _busid: &str) {}
+    }
+
+    let seen: std::sync::Arc<std::sync::Mutex<Vec<(String, u16, String)>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let entry = make_device_entry("1-1", 0x046d, 0xc261);
+
+    let state = usbip_server::api::AppState {
+        start_time: std::time::Instant::now(),
+        exports: Arc::new(Mutex::new(HashMap::new())),
+        device_lister: Arc::new(MockDeviceManager),
+        mdns_browser: Arc::new(EmptyBrowser),
+        remote_importer: Arc::new(RecordingImporter { seen: seen.clone(), entry }),
+        config: Arc::new(tokio::sync::RwLock::new(usbip_server::api::ApiConfig {
+            bind_address: "0.0.0.0".to_string(),
+            port: 3240,
+            api_port: 3241,
+            encryption_enabled: false,
+        })),
+        latency_tx: usbip_server::api::new_latency_sender(),
+    };
+    let app = usbip_server::api::build_router(Arc::new(state));
+
+    let (status, body) = post_json(
+        app,
+        "/api/connect",
+        &serde_json::json!({
+            "host": "192.168.1.21",
+            "port": 3240,
+            "busid": "1-1"
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "imported");
+    assert_eq!(body["busid"], "1-1");
+    assert_eq!(body["vid"], 0x046d);
+    assert_eq!(body["pid"], 0xc261);
+
+    // The importer must have been called with the request's host/port/busid.
+    let calls = seen.lock().unwrap();
+    assert_eq!(calls.len(), 1, "importer should be called exactly once");
+    assert_eq!(calls[0].0, "192.168.1.21");
+    assert_eq!(calls[0].1, 3240);
+    assert_eq!(calls[0].2, "1-1");
+}
+
+/// `POST /api/disconnect` for a known export calls `RemoteImporter::abort`
+/// with the busid and returns 200. The audit's acceptance criterion:
+/// disconnect must signal the running importer, not just remove from
+/// the in-memory exports map.
+#[tokio::test]
+async fn test_post_disconnect_calls_importer_abort() {
+    use usbip_server::api::RemoteImporter;
+
+    struct AbortRecordingImporter {
+        aborted: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+    impl RemoteImporter for AbortRecordingImporter {
+        fn import(
+            &self,
+            _host: &str,
+            _port: u16,
+            _busid: &str,
+        ) -> usbip_core::error::UsbIpResult<UsbIpDeviceEntry> {
+            Err(usbip_core::error::UsbIpError::from(usbip_core::error::ErrorKind::DeviceNotFound(
+                "unused".into(),
+            )))
+        }
+        fn abort(&self, busid: &str) {
+            self.aborted.lock().unwrap().push(busid.into());
+        }
+    }
+
+    let aborted: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let entry = make_device_entry("1-1", 0x046d, 0xc261);
+    let mut exports = HashMap::new();
+    exports.insert("1-1".to_string(), (SocketAddr::from(([127, 0, 0, 1], 0)), entry));
+
+    let state = usbip_server::api::AppState {
+        start_time: std::time::Instant::now(),
+        exports: Arc::new(Mutex::new(exports)),
+        device_lister: Arc::new(MockDeviceManager),
+        mdns_browser: Arc::new(EmptyBrowser),
+        remote_importer: Arc::new(AbortRecordingImporter { aborted: aborted.clone() }),
+        config: Arc::new(tokio::sync::RwLock::new(usbip_server::api::ApiConfig {
+            bind_address: "0.0.0.0".to_string(),
+            port: 3240,
+            api_port: 3241,
+            encryption_enabled: false,
+        })),
+        latency_tx: usbip_server::api::new_latency_sender(),
+    };
+    let app = usbip_server::api::build_router(Arc::new(state));
+
+    let (status, body) =
+        post_json(app, "/api/disconnect", &serde_json::json!({"busid": "1-1"})).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "disconnected");
+    assert_eq!(body["busid"], "1-1");
+
+    let calls = aborted.lock().unwrap();
+    assert_eq!(calls.len(), 1, "importer.abort() should be called exactly once");
+    assert_eq!(calls[0], "1-1");
 }

@@ -16,6 +16,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use usbip_core::error::UsbIpError;
 
+mod actions;
 mod windows_usb;
 
 // ---------------------------------------------------------------------------
@@ -307,7 +308,7 @@ fn run_gui() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let app = AnyPlugApp::default();
+    let app = AnyPlugApp::new();
 
     eframe::run_native("AnyPlug", options, Box::new(|_cc| Box::new(app)))
         .map_err(|e| anyhow::anyhow!("GUI error: {e}"))
@@ -322,16 +323,32 @@ fn run_gui() -> anyhow::Result<()> {
 // egui application
 // ---------------------------------------------------------------------------
 
-#[derive(Default)]
 struct AnyPlugApp {
     /// Local USB devices discovered via SetupAPI
     local_devices: Vec<windows_usb::UsbDeviceInfo>,
     /// Error message to display
     error: Option<String>,
-    /// Server status
-    server_running: bool,
     /// Server port
     server_port: u16,
+    /// Server lifecycle controller — owns the shutdown channel.
+    server: actions::ServerController,
+    /// mDNS discoverer for the "Discover" button.
+    discoverer: Option<actions::Discoverer>,
+    /// Most recent mDNS results for display.
+    discovered: Vec<actions::DiscoveredServer>,
+}
+
+impl AnyPlugApp {
+    fn new() -> Self {
+        Self {
+            local_devices: Vec::new(),
+            error: None,
+            server_port: 3240,
+            server: actions::ServerController::new(),
+            discoverer: actions::Discoverer::new().ok(),
+            discovered: Vec::new(),
+        }
+    }
 }
 
 impl eframe::App for AnyPlugApp {
@@ -350,15 +367,15 @@ impl eframe::App for AnyPlugApp {
                 ui.label("(No devices detected — click Refresh)");
             } else {
                 egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                    for dev in &self.local_devices {
+                    let devices = self.local_devices.clone();
+                    for dev in &devices {
                         ui.horizontal(|ui| {
                             ui.label(format!(
                                 "{:04x}:{:04x}  {}",
                                 dev.vendor_id, dev.product_id, dev.description
                             ));
                             if ui.button("Export").clicked() {
-                                // TODO: trigger server export for this device
-                                tracing::info!("Export requested for {dev:?}");
+                                self.export_device(dev);
                             }
                         });
                     }
@@ -369,26 +386,40 @@ impl eframe::App for AnyPlugApp {
 
             // Action buttons
             ui.horizontal(|ui| {
-                if ui.button("🔄 Refresh").clicked() {
+                if ui.button("Refresh").clicked() {
                     self.refresh_devices();
                 }
-                if ui.button("⚙ Start Server").clicked() {
+                if self.server.is_running() {
+                    if ui.button("Stop Server").clicked() {
+                        if let Err(e) = self.server.stop() {
+                            self.error = Some(format!("Stop failed: {e}"));
+                        }
+                    }
+                } else if ui.button("Start Server").clicked() {
                     self.start_server();
                 }
-                if ui.button("🔗 Discover").clicked() {
-                    // TODO: launch mDNS discovery popup
-                    tracing::info!("mDNS discovery requested");
+                if ui.button("Discover").clicked() {
+                    self.run_discover();
                 }
             });
 
             ui.separator();
 
+            // Discovered servers list
+            if !self.discovered.is_empty() {
+                ui.label("Discovered USB/IP servers:");
+                for srv in &self.discovered {
+                    ui.label(format!("  {}", srv.addr));
+                }
+                ui.separator();
+            }
+
             // Status bar
             ui.horizontal(|ui| {
-                if self.server_running {
-                    ui.label(format!("✅ Server running on port {}", self.server_port));
+                if self.server.is_running() {
+                    ui.label(format!("Server running on port {}", self.server.port()));
                 } else {
-                    ui.label("⏹ Server stopped");
+                    ui.label("Server stopped");
                 }
             });
 
@@ -420,42 +451,44 @@ impl AnyPlugApp {
     }
 
     fn start_server(&mut self) {
-        if self.server_running {
-            self.error = Some("Server is already running".to_string());
-            return;
+        if let Err(e) = self.server.start(self.server_port) {
+            self.error = Some(format!("Start failed: {e}"));
         }
+    }
 
-        // Start server on a background thread
-        let port = self.server_port;
-        std::thread::spawn(move || {
-            let config = usbip_server::ServerConfig {
-                bind_address: "0.0.0.0".to_string(),
-                port,
-                allowed_vid_pid: Vec::new(),
-                require_confirmation: true,
-                encryption_enabled: false,
-                tcp_nodelay: true,
-                max_bandwidth: usbip_server::BandwidthLimit::unlimited(),
-                per_client_bandwidth: None,
-            };
+    fn export_device(&mut self, dev: &windows_usb::UsbDeviceInfo) {
+        // Per-device export shares the same server. We log the
+        // request and let the user know the server is the actual
+        // boundary — exporting a specific device currently requires
+        // VID:PID allowlisting on the server, which is configuration
+        // not implemented in the GUI yet.
+        tracing::info!(
+            "Export requested for {:04x}:{:04x} ({})",
+            dev.vendor_id,
+            dev.product_id,
+            dev.description
+        );
+        self.error = Some(format!(
+            "Per-device export for {:04x}:{:04x} is not yet supported; \
+             start the server and use the USB/IP client to import it.",
+            dev.vendor_id, dev.product_id
+        ));
+    }
 
-            let rt = tokio::runtime::Runtime::new().unwrap();
-            rt.block_on(async {
-                match usbip_server::Server::new(config).await {
-                    Ok(server) => {
-                        tracing::info!("Server started successfully on port {port}");
-                        if let Err(e) = server.run().await {
-                            tracing::error!("Server error: {e}");
-                        }
-                    },
-                    Err(e) => {
-                        tracing::error!("Failed to create server: {e}");
-                    },
-                }
-            });
-        });
-
-        self.server_running = true;
+    fn run_discover(&mut self) {
+        let Some(discoverer) = self.discoverer.as_ref() else {
+            self.error = Some("mDNS subsystem is not available on this host".to_string());
+            return;
+        };
+        match discoverer.discover(std::time::Duration::from_secs(2)) {
+            Ok(servers) => {
+                self.discovered = servers;
+                self.error = None;
+            },
+            Err(e) => {
+                self.error = Some(format!("mDNS discover failed: {e}"));
+            },
+        }
     }
 }
 
@@ -490,18 +523,16 @@ fn my_service_main(_arguments: Vec<std::ffi::OsString>) {
 
     let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel::<()>();
 
-    let status_handle = service_control_handler::register(
-        "anyplug-service",
-        move |control| match control {
+    let status_handle =
+        service_control_handler::register("anyplug-service", move |control| match control {
             ServiceControl::Stop | ServiceControl::Shutdown => {
                 let _ = shutdown_tx.send(());
                 ServiceControlHandlerResult::NoError
             },
             ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
             _ => ServiceControlHandlerResult::NotImplemented,
-        },
-    )
-    .expect("Failed to register service control handler");
+        })
+        .expect("Failed to register service control handler");
 
     // Report running
     status_handle
@@ -533,8 +564,7 @@ fn my_service_main(_arguments: Vec<std::ffi::OsString>) {
     let server_handle = std::thread::spawn(|| {
         let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
         rt.block_on(async {
-            let server =
-                usbip_server::Server::new(config).await.expect("Failed to create server");
+            let server = usbip_server::Server::new(config).await.expect("Failed to create server");
             server.run().await.ok();
         });
     });

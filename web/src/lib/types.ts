@@ -22,7 +22,9 @@ export interface ServerStatus {
 export interface ServerConfig {
   bind_address: string;
   port: number;
+  api_port: number;
   encryption_enabled: boolean;
+  per_client_bandwidth: number | null;
 }
 
 export interface ConnectRequest {

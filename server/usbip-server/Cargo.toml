@@ -40,8 +40,14 @@ chrono = { workspace = true }
 tower = { workspace = true }
 prometheus = { version = "0.13", features = ["process"] }
 
+# Unix-only: --bind-iface uses getifaddrs from libc.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Linux-only: the client opens `/dev/vhci`, which only exists on
+# Linux. macOS / Windows builds use the `UnsupportedImporter` stub.
+[target.'cfg(target_os = "linux")'.dependencies]
+usbip-client = { path = "../../client/usbip-client" }
 
 [dev-dependencies]
 criterion.workspace = true

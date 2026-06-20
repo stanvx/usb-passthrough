@@ -3,20 +3,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import { getConfig, updateConfig } from '@/lib/api';
 import type { ServerConfig } from '@/lib/types';
-import { Settings, Save, RefreshCw } from 'lucide-react';
+import { Save, RefreshCw } from 'lucide-react';
 
 interface PortInfo {
-  key: string;
+  key: 'port' | 'api_port';
   label: string;
-  value: number;
-  default: number;
   description: string;
 }
 
 const PORT_FIELDS: PortInfo[] = [
-  { key: 'wire', label: 'Wire Port', value: 3240, default: 3240, description: 'USB/IP protocol traffic — the core passthrough port for USB data transfer' },
-  { key: 'api', label: 'API Port', value: 3241, default: 3241, description: 'REST API and WebSocket — web console, health checks, configuration' },
-  { key: 'mdns', label: 'mDNS Port', value: 5353, default: 5353, description: 'Service discovery — broadcasts server presence on the local network' },
+  { key: 'port', label: 'Wire Port', description: 'USB/IP protocol traffic — the core passthrough port for USB data transfer' },
+  { key: 'api_port', label: 'API Port', description: 'REST API and WebSocket — web console, health checks, configuration' },
 ];
 
 export default function ConfigEditor() {
@@ -47,17 +44,29 @@ export default function ConfigEditor() {
     setConfig({ ...config, bind_address: value });
   }
 
-  function handlePortChange(field: PortInfo, value: string) {
+  function handlePortChange(key: 'port' | 'api_port', value: string) {
     if (!config) return;
     const port = parseInt(value, 10);
     if (!isNaN(port) && port > 0 && port <= 65535) {
-      setConfig({ ...config, [field.key === 'wire' ? 'port' : field.key === 'api' ? 'api_port' : 'mdns_port']: port });
+      setConfig({ ...config, [key]: port });
     }
   }
 
   function handleEncryptionToggle() {
     if (!config) return;
     setConfig({ ...config, encryption_enabled: !config.encryption_enabled });
+  }
+
+  function handleBandwidthChange(value: string) {
+    if (!config) return;
+    if (value === '') {
+      setConfig({ ...config, per_client_bandwidth: null });
+      return;
+    }
+    const bytes = parseInt(value, 10);
+    if (!isNaN(bytes) && bytes >= 0) {
+      setConfig({ ...config, per_client_bandwidth: bytes });
+    }
   }
 
   async function handleSave() {
@@ -141,8 +150,8 @@ export default function ConfigEditor() {
               </label>
               <input
                 type="number"
-                value={field.value}
-                onChange={(e) => handlePortChange(field, e.target.value)}
+                value={config[field.key]}
+                onChange={(e) => handlePortChange(field.key, e.target.value)}
                 min={1}
                 max={65535}
                 className="w-full px-4 py-2.5 rounded-lg bg-[#0f1117] border border-[#2a2e3a] text-white text-sm focus:outline-none focus:border-anyplug-500/50 transition-colors"
@@ -152,6 +161,28 @@ export default function ConfigEditor() {
               </p>
             </div>
           ))}
+
+          {/* Per-Client Bandwidth */}
+          <div className="bg-[#1a1d28] border border-[#2a2e3a] rounded-xl p-5">
+            <label
+              htmlFor="per-client-bandwidth"
+              className="block text-sm font-medium text-white mb-2"
+            >
+              Per-Client Bandwidth (bytes/sec)
+            </label>
+            <input
+              id="per-client-bandwidth"
+              type="number"
+              min={0}
+              value={config.per_client_bandwidth ?? ''}
+              onChange={(e) => handleBandwidthChange(e.target.value)}
+              placeholder="0 = unlimited"
+              className="w-full px-4 py-2.5 rounded-lg bg-[#0f1117] border border-[#2a2e3a] text-white text-sm focus:outline-none focus:border-anyplug-500/50 transition-colors"
+            />
+            <p className="text-xs text-[#6b6f83] mt-1.5">
+              Per-client bandwidth cap in bytes per second. 0 = unlimited. Applies to every connected client.
+            </p>
+          </div>
 
           {/* Encryption Toggle */}
           <div className="bg-[#1a1d28] border border-[#2a2e3a] rounded-xl p-5">
