@@ -77,7 +77,6 @@ class ServerDiscovery(
         stop()
         start()
     }
-    }
 
     /**
      * Tear down the JmDNS session and release the multicast lock.
