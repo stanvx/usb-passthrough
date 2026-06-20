@@ -247,6 +247,7 @@ class MainActivity : ComponentActivity() {
                 val (h, p) = parseHostPort(host)
                 service?.startClient(h, p, busId)
             },
+            onRefreshDiscovery = { service?.restartDiscovery() },
             discoveredServers = discoveredServers,
             localDevices = devices,
             isServiceRunning = isRunning,

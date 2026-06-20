@@ -2,6 +2,7 @@ package com.anyplug.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +49,7 @@ fun MainScreen(
     onStartServer: (deviceName: String) -> Unit,
     onStopService: () -> Unit,
     onConnectToServer: (host: String, busId: String) -> Unit,
+    onRefreshDiscovery: () -> Unit = {},
     discoveredServers: List<DiscoveredServer>,
     localDevices: List<LocalUsbDevice>,
     isServiceRunning: Boolean,
@@ -105,7 +107,7 @@ fun MainScreen(
                     onStartServer = onStartServer,
                     sharedDeviceName = sharedDeviceName,
                 )
-                1 -> ClientPanel(discoveredServers, onConnectToServer)
+                1 -> ClientPanel(discoveredServers, onConnectToServer, onRefreshDiscovery)
             }
         }
     }
@@ -189,12 +191,20 @@ private fun ServerPanel(
 private fun ClientPanel(
     discoveredServers: List<DiscoveredServer>,
     onConnect: (host: String, busId: String) -> Unit,
+    onRefresh: () -> Unit = {},
 ) {
     var manualHost by remember { mutableStateOf("") }
     var manualBusId by remember { mutableStateOf("") }
     var serverToPickFrom by remember { mutableStateOf<DiscoveredServer?>(null) }
 
-    SectionHeader("Discovered Servers")
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        SectionHeader("Discovered Servers")
+        RefreshButton(onClick = onRefresh)
+    }
 
     Spacer(modifier = Modifier.height(8.dp))
 
@@ -292,5 +302,12 @@ private fun ClientPanel(
             text = "Connect",
             fontWeight = FontWeight.SemiBold,
         )
+    }
+}
+
+@Composable
+private fun RefreshButton(onClick: () -> Unit) {
+    TextButton(onClick = onClick) {
+        Text("Refresh", style = MaterialTheme.typography.labelLarge)
     }
 }
