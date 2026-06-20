@@ -12,6 +12,8 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.lifecycle.LifecycleService
 import com.anyplug.client.UsbIpClient
+import com.anyplug.discovery.ServerDiscovery
+import com.anyplug.model.DiscoveredServer
 import com.anyplug.server.UsbIpServer
 import com.anyplug.server.UsbIpServer.UsbDeviceFilter
 import kotlinx.coroutines.*
@@ -41,6 +43,20 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
     /** Reactive state observers — UI collects this to redraw when mode changes. */
     private val _state = MutableStateFlow(Mode.IDLE)
     val state: StateFlow<Mode> = _state.asStateFlow()
+
+    /**
+     * mDNS-based LAN discovery for USB/IP servers.
+     * Created in [onCreate] and started/stopped via [startDiscovery] / [stopDiscovery].
+     */
+    private var serverDiscovery: ServerDiscovery? = null
+
+    /**
+     * Stream of currently-discovered servers. UI collects this to render
+     * the LAN client panel. Empty when discovery is not running.
+     */
+    val discoveredServers: StateFlow<List<DiscoveredServer>>
+        get() = serverDiscovery?.servers
+            ?: MutableStateFlow(emptyList())
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var transferWakeLock: PowerManager.WakeLock? = null
@@ -101,6 +117,10 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
             TRANSFER_WAKE_LOCK_TAG,
         )
         transferWakeLock?.setReferenceCounted(true)
+
+        // mDNS LAN discovery — starts lazily via [startDiscovery] so the
+        // multicast lock is not held before the user opens the client panel.
+        serverDiscovery = ServerDiscovery(applicationContext, serviceScope)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -132,6 +152,8 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        serverDiscovery?.dispose()
+        serverDiscovery = null
         if (wakeLock?.isHeld == true) wakeLock?.release()
         if (transferWakeLock?.isHeld == true) transferWakeLock?.release()
         serverRunner?.stop()
@@ -140,6 +162,22 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
     }
 
     // ─── Public API ──────────────────────────────────────────
+
+    /**
+     * Begin mDNS discovery for USB/IP servers on the LAN. Idempotent.
+     * Discovery is opt-in so the multicast lock is not held until the
+     * user actually opens the client panel.
+     */
+    fun startDiscovery() {
+        serverDiscovery?.start()
+    }
+
+    /**
+     * Stop mDNS discovery and release the multicast lock. Idempotent.
+     */
+    fun stopDiscovery() {
+        serverDiscovery?.stop()
+    }
 
     // ─── State queries ─────────────────────────────────────────
 

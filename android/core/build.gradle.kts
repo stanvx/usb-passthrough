@@ -47,4 +47,7 @@ dependencies {
 
     // Notification support (foreground service)
     implementation("androidx.core:core:1.12.0")
+
+    // Test dependencies — JVM-only unit tests for core helpers
+    testImplementation("junit:junit:4.13.2")
 }

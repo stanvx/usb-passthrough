@@ -23,7 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.anyplug.bridge.RustBridge
@@ -60,6 +59,9 @@ class MainActivity : ComponentActivity() {
     private val serviceMode = mutableStateOf(AnyPlugService.Mode.IDLE)
     private val sharedDeviceNameState = mutableStateOf("")
 
+    // mDNS-discovered servers — pushed from the service's flow
+    private val discoveredServersState = mutableStateOf(emptyList<DiscoveredServer>())
+
     // Triggers recomposition when the service binds/unbinds
     private val serviceConnected = mutableStateOf(false)
 
@@ -76,6 +78,10 @@ class MainActivity : ComponentActivity() {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             service = (binder as AnyPlugService.LocalBinder).getService()
             serviceConnected.value = true
+            // Begin LAN discovery as soon as the service is bound. The
+            // service holds the multicast lock and will release it in
+            // onDestroy or when stopDiscovery() is called.
+            service?.startDiscovery()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -167,6 +173,9 @@ class MainActivity : ComponentActivity() {
         try {
             unregisterReceiver(detachReceiver)
         } catch (_: IllegalArgumentException) { /* already unregistered */ }
+        // Stop LAN discovery when the activity goes away so the multicast
+        // lock is released. The service will re-start it on next bind.
+        service?.stopDiscovery()
         if (service != null) {
             unbindService(serviceConnection)
         }
@@ -178,7 +187,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun MainScreenContent() {
         val context = LocalContext.current
-        val discoveredServers = remember { emptyList<DiscoveredServer>() }
+        val discoveredServers by discoveredServersState
         val devices by localDevices
         val connected by serviceConnected
         // Touch connected to force recomposition when service binds/unbinds
@@ -205,6 +214,15 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(connected, service) {
             service?.let { svc ->
                 svc.state.collect(modeCollector)
+            }
+        }
+
+        // Mirror mDNS-discovered servers into a Compose state.
+        LaunchedEffect(connected, service) {
+            service?.let { svc ->
+                svc.discoveredServers.collect { servers ->
+                    discoveredServersState.value = servers
+                }
             }
         }
 
