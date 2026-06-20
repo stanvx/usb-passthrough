@@ -192,6 +192,7 @@ private fun ClientPanel(
 ) {
     var manualHost by remember { mutableStateOf("") }
     var manualBusId by remember { mutableStateOf("") }
+    var serverToPickFrom by remember { mutableStateOf<DiscoveredServer?>(null) }
 
     SectionHeader("Discovered Servers")
 
@@ -204,22 +205,48 @@ private fun ClientPanel(
     } else {
         discoveredServers.forEach { server ->
             val firstDevice = server.devices.firstOrNull()
+            // Empty allowlist on the server means the server is not
+            // sharing anything — render the card but disable the
+            // action so the user sees the server exists but cannot
+            // connect to a device on it.
+            val hasSharedDevices = server.devices.isNotEmpty()
+            val actionLabel = when {
+                !hasSharedDevices -> "No shared devices"
+                else -> "Connect"
+            }
             DeviceCard(
                 title = server.host,
-                subtitle = server.devices.joinToString(", ") { device ->
-                    "${device.name} (${device.busId})"
+                subtitle = if (hasSharedDevices) {
+                    server.devices.joinToString(", ") { device ->
+                        "${device.name} (${device.busId})"
+                    }
+                } else {
+                    "Server is not sharing any USB devices."
                 },
-                actionLabel = "Connect",
+                actionLabel = actionLabel,
                 onAction = {
-                    if (firstDevice != null) {
-                        onConnect(server.host, firstDevice.busId)
-                    } else {
-                        onConnect(server.host, "1-1")
+                    if (!hasSharedDevices) return@DeviceCard
+                    when (server.devices.size) {
+                        1 -> onConnect(server.host, firstDevice!!.busId)
+                        else -> serverToPickFrom = server
                     }
                 },
                 modifier = Modifier.padding(vertical = 4.dp),
             )
         }
+    }
+
+    // ── Per-device picker sheet ──────────────────────────────
+    serverToPickFrom?.let { server ->
+        DevicePickerSheet(
+            serverHost = server.host,
+            devices = server.devices,
+            onPicked = { device ->
+                serverToPickFrom = null
+                onConnect(server.host, device.busId)
+            },
+            onDismiss = { serverToPickFrom = null },
+        )
     }
 
     Spacer(modifier = Modifier.height(20.dp))
