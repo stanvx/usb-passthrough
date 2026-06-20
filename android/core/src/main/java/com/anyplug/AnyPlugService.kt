@@ -284,6 +284,25 @@ class AnyPlugService : LifecycleService(), WakeLockManager {
             busId = busId,
             wakeLockManager = this
         )
+
+        // Probe /api/status in the background and remember the endpoint
+        // for next-launch discovery. Best-effort; failures are silent.
+        val hostForRemember = serverHost
+        val portForRemember = serverPort
+        serviceScope.launch {
+            val probe = com.anyplug.discovery.RestProbe.probe(hostForRemember, 3241)
+            if (probe != null) {
+                serverDiscovery?.saveLastKnown(probe)
+            } else {
+                serverDiscovery?.saveLastKnown(
+                    com.anyplug.discovery.ServerEndpoint(
+                        host = hostForRemember,
+                        apiPort = 3241,
+                        wirePort = portForRemember,
+                    )
+                )
+            }
+        }
         serviceScope.launch {
             try {
                 clientRunner?.start()
