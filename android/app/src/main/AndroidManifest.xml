@@ -9,6 +9,11 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Android 13+ — required to discover / connect to nearby WiFi devices
+         for both mDNS browse and the REST subnet scanner. Without this,
+         SubnetScanner and the JmDNS listener receive no responses on
+         Android 13+ even on the same LAN. -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
 
     <!-- Foreground service (keep alive in background) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -23,6 +28,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="AnyPlug"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AnyPlug">
 
         <!-- Main phone/tablet activity -->

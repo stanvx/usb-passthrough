@@ -45,9 +45,19 @@ dependencies {
     // mDNS fallback — exposed through future discovery API
     api("org.jmdns:jmdns:3.5.9")
 
+    // OkHttp — REST probes for layered discovery (SubnetScanner, LastKnownServer).
+    // Must be 'api' so app code can construct shared clients if needed.
+    api("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // DataStore preferences — last-known-good server cache.
+    // Must be 'api' so AnyPlugService can read/write directly.
+    api("androidx.datastore:datastore-preferences:1.0.0")
+
     // Notification support (foreground service)
     implementation("androidx.core:core:1.12.0")
 
     // Test dependencies — JVM-only unit tests for core helpers
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
