@@ -83,6 +83,7 @@ impl RemoteImporter for FakeImporter {
         self.calls.lock().unwrap().push((host.to_string(), port, busid.to_string()));
         Ok(self.entry.clone())
     }
+    fn abort(&self, _busid: &str) {}
 }
 
 /// Fake importer that always fails — used to exercise error paths.
@@ -99,6 +100,7 @@ impl RemoteImporter for FailingImporter {
             "simulated".into(),
         )))
     }
+    fn abort(&self, _busid: &str) {}
 }
 
 fn make_entry(busid: &str, vid: u16, pid: u16) -> UsbIpDeviceEntry {

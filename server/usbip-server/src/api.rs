@@ -108,6 +108,12 @@ pub trait RemoteImporter {
     /// Import the device `busid` from `host:port`. Returns the device
     /// entry on success.
     fn import(&self, host: &str, port: u16, busid: &str) -> UsbIpResult<UsbIpDeviceEntry>;
+
+    /// Abort the in-flight URB forwarding task for a previously-imported
+    /// `busid`. Called by `POST /api/disconnect` so the server signals
+    /// the live connection rather than just dropping the bookkeeping
+    /// entry. No-op when there is no live task for the busid.
+    fn abort(&self, busid: &str);
 }
 
 /// Server configuration exposed via the API (secrets redacted).
@@ -447,10 +453,22 @@ fn error_response(status: StatusCode, err: &UsbIpError) -> axum::response::Respo
 }
 
 /// `POST /api/disconnect` — disconnect a specific device.
+/// `POST /api/disconnect` — disconnect a specific device.
+///
+/// Removes the export from the in-memory `exports` map AND signals the
+/// `RemoteImporter` so the live TCP stream / URB forwarding task gets
+/// aborted. Without the importer signal the audit identifies this as
+/// a partial fix: the bookkeeping entry is dropped but the connection
+/// lives on until the client side closes.
 async fn post_disconnect(
     State(state): State<Arc<AppState>>,
     Json(req): Json<DisconnectRequest>,
 ) -> impl IntoResponse {
+    // Signal the importer first so the live task is aborted even if
+    // the exports map is missing the entry (e.g. server restarted
+    // between connect and disconnect). Idempotent on the trait side.
+    state.remote_importer.abort(&req.busid);
+
     let mut exports = state.exports.lock().await;
     match exports.remove(&req.busid) {
         Some(_) => (

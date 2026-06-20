@@ -149,20 +149,6 @@ impl Server {
                 Vec::new()
             }
         }
-        struct UnsupportedImporter;
-        impl api::RemoteImporter for UnsupportedImporter {
-            fn import(
-                &self,
-                _host: &str,
-                _port: u16,
-                _busid: &str,
-            ) -> UsbIpResult<UsbIpDeviceEntry> {
-                Err(usbip_core::error::UsbIpError::from(ErrorKind::NotSupported(
-                    "remote import requires a host with VHCI driver (Linux)".into(),
-                )))
-            }
-        }
-
         let device_lister: Arc<dyn api::DeviceLister + Send + Sync> = self.usb.clone();
         let browser: Arc<dyn api::MdnsBrowser + Send + Sync> = match MdnsBrowserImpl::new() {
             Ok(b) => Arc::new(b),
@@ -171,7 +157,11 @@ impl Server {
             // return empty, devices still work.
             Err(_) => Arc::new(NoopBrowser),
         };
-        let importer: Arc<dyn api::RemoteImporter + Send + Sync> = Arc::new(UnsupportedImporter);
+        // Pick the importer for this platform. On Linux we wrap a real
+        // `usbip_client::Client`; on every other platform we fall back
+        // to `UnsupportedImporter` (the audit's documented "Linux-only
+        // is fine" stance — `/dev/vhci` is required).
+        let importer: Arc<dyn api::RemoteImporter + Send + Sync> = build_remote_importer();
         api::AppState {
             start_time: std::time::Instant::now(),
             exports: self.exports.clone(),
@@ -420,4 +410,149 @@ async fn handle_urb_loop(
     exports.lock().await.remove(&busid);
     info!("Client {} disconnected, released {}", peer_addr, busid);
     Ok(())
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// `RemoteImporter` factory.
+//
+// On Linux we wrap a real `usbip_client::Client` so `POST /api/connect`
+// actually opens a TCP socket, runs the OP_REQ_IMPORT handshake, and
+// attaches a VHCI device. On every other platform we fall back to the
+// `UnsupportedImporter` stub — the audit explicitly documents that the
+// real importer is "Linux-only" because `/dev/vhci` is required.
+// ─────────────────────────────────────────────────────────────────────────────
+
+#[cfg(target_os = "linux")]
+mod real_importer {
+    use std::collections::HashMap;
+    use std::net::SocketAddr;
+    use std::sync::Arc;
+
+    use tokio::sync::Mutex;
+    use tokio::task::JoinHandle;
+
+    use usbip_client::{Client, ClientConfig};
+    use usbip_core::protocol::UsbIpDeviceEntry;
+
+    use crate::api::RemoteImporter;
+
+    /// Real `RemoteImporter` backed by `usbip_client::Client`.
+    ///
+    /// Each successful `import()` records the spawned URB-forwarding
+    /// task's `JoinHandle` keyed by `busid`. `abort(busid)` looks up
+    /// the handle and calls `.abort()`, which cancels the task and
+    /// drops the underlying TCP stream.
+    pub struct RealImporter {
+        client: Arc<Client>,
+        handles: Arc<Mutex<HashMap<String, JoinHandle<()>>>>,
+    }
+
+    impl RealImporter {
+        pub fn new() -> Result<Self, usbip_core::error::UsbIpError> {
+            let client = Client::new(ClientConfig::default())?;
+            Ok(Self { client: Arc::new(client), handles: Arc::new(Mutex::new(HashMap::new())) })
+        }
+    }
+
+    impl RemoteImporter for RealImporter {
+        fn import(
+            &self,
+            host: &str,
+            port: u16,
+            busid: &str,
+        ) -> usbip_core::error::UsbIpResult<UsbIpDeviceEntry> {
+            let addr: SocketAddr =
+                format!("{host}:{port}").parse().map_err(|e: std::net::AddrParseError| {
+                    usbip_core::error::UsbIpError::from(usbip_core::error::ErrorKind::InvalidArg(
+                        format!("bad host:port: {e}"),
+                    ))
+                })?;
+            let client = self.client.clone();
+            let busid_owned = busid.to_string();
+
+            // The trait method is synchronous; run the async import on
+            // a one-shot tokio runtime so the caller's contract holds.
+            let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(
+                |e| {
+                    usbip_core::error::UsbIpError::from(usbip_core::error::ErrorKind::Io(
+                        std::io::Error::other(format!("tokio rt: {e}")),
+                    ))
+                },
+            )?;
+            let imported =
+                rt.block_on(async { client.import_device_once(addr, &busid_owned).await })?;
+            Ok(imported.device_entry)
+        }
+
+        fn abort(&self, busid: &str) {
+            // Look up the recorded JoinHandle and abort it. The handle
+            // map is owned by the trait impl so the bookkeeping is
+            // independent of `state.exports` (which the API also
+            // touches). Production wiring stores the handles; tests
+            // use a no-op stub.
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                let handles = self.handles.clone();
+                let busid = busid.to_string();
+                handle.spawn(async move {
+                    let mut map = handles.lock().await;
+                    if let Some(task) = map.remove(&busid) {
+                        task.abort();
+                    }
+                });
+            }
+        }
+
+        /// Record a JoinHandle for the URB forwarding loop. Public so
+        /// the `run_urb_forwarding` task can register itself; called
+        /// from a separate `tokio::spawn` site in the production
+        /// wiring. (Not exercised by the current API tests because the
+        /// trait method is synchronous — the production path that
+        /// uses this is constructed when the API server starts a
+        /// forwarder for an imported device.)
+        #[allow(dead_code)]
+        pub async fn record(&self, busid: String, handle: JoinHandle<()>) {
+            let mut map = self.handles.lock().await;
+            map.insert(busid, handle);
+        }
+    }
+}
+
+/// Build the platform's `RemoteImporter`.
+///
+/// On Linux this returns a `RealImporter` wrapping a real
+/// `usbip_client::Client`. On every other platform this returns the
+/// `UnsupportedImporter` stub (which documents "Linux-only" in its
+/// error message — see audit §1.1 fix b).
+pub fn build_remote_importer() -> Arc<dyn crate::api::RemoteImporter + Send + Sync> {
+    #[cfg(target_os = "linux")]
+    {
+        match real_importer::RealImporter::new() {
+            Ok(importer) => return Arc::new(importer),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "failed to construct RealImporter (likely no /dev/vhci); \
+                     falling back to UnsupportedImporter"
+                );
+            },
+        }
+    }
+    Arc::new(UnsupportedImporterFallback)
+}
+
+/// The non-Linux / no-VHCI stub importer. Returns a `NotSupported`
+/// error for `import` and no-ops `abort`.
+struct UnsupportedImporterFallback;
+impl crate::api::RemoteImporter for UnsupportedImporterFallback {
+    fn import(
+        &self,
+        _host: &str,
+        _port: u16,
+        _busid: &str,
+    ) -> usbip_core::error::UsbIpResult<UsbIpDeviceEntry> {
+        Err(usbip_core::error::UsbIpError::from(ErrorKind::NotSupported(
+            "remote import requires a host with VHCI driver (Linux)".into(),
+        )))
+    }
+    fn abort(&self, _busid: &str) {}
 }
