@@ -8,9 +8,9 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
-use usbip_client::{Client, ClientConfig};
 #[cfg(unix)]
 use usbip_client::daemon::{DaemonCommand, DaemonConfig, DaemonManager};
+use usbip_client::{Client, ClientConfig};
 use usbip_core::error::UsbIpResult;
 
 #[derive(Parser)]
@@ -178,9 +178,11 @@ async fn main() -> UsbIpResult<()> {
                 None => {
                     // Try to auto-detect from config
                     match DaemonConfig::find_config() {
-                        Some(cfg_path) => DaemonConfig::load(&cfg_path)
-                            .map(|cfg| cfg.socket_path)
-                            .unwrap_or_else(|_| PathBuf::from("/var/run/usbip-client/usbip-client.sock")),
+                        Some(cfg_path) => {
+                            DaemonConfig::load(&cfg_path).map(|cfg| cfg.socket_path).unwrap_or_else(
+                                |_| PathBuf::from("/var/run/usbip-client/usbip-client.sock"),
+                            )
+                        },
                         None => PathBuf::from("/var/run/usbip-client/usbip-client.sock"),
                     }
                 },
@@ -198,9 +200,7 @@ async fn main() -> UsbIpResult<()> {
                 DaemonCtlAction::Connect { server, busid } => {
                     DaemonCommand::Connect { server, busid }
                 },
-                DaemonCtlAction::Disconnect { busid } => {
-                    DaemonCommand::Disconnect { busid }
-                },
+                DaemonCtlAction::Disconnect { busid } => DaemonCommand::Disconnect { busid },
                 DaemonCtlAction::Status => DaemonCommand::Status,
                 DaemonCtlAction::Shutdown => DaemonCommand::Shutdown,
             };
@@ -228,10 +228,7 @@ async fn main() -> UsbIpResult<()> {
                     }
                 }
             } else {
-                eprintln!(
-                    "Error: {}",
-                    response.message.as_deref().unwrap_or("unknown error")
-                );
+                eprintln!("Error: {}", response.message.as_deref().unwrap_or("unknown error"));
                 std::process::exit(1);
             }
         },

@@ -1,6 +1,7 @@
 pub mod api;
 pub mod bandwidth;
 pub mod batcher;
+pub mod crypto_stream;
 pub mod discovery;
 pub mod hotplug;
 #[cfg(target_os = "macos")]
