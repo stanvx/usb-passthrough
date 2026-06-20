@@ -5101,6 +5101,7 @@ dependencies = [
  "criterion",
  "futures",
  "gethostname 0.4.3",
+ "libc",
  "mdns-sd",
  "prometheus",
  "ring",

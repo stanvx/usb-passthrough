@@ -17,6 +17,14 @@ pub struct Cli {
     #[arg(short, long, default_value = "0.0.0.0")]
     pub bind: String,
 
+    /// Bind to the IP address of the named network interface (e.g. `en0`).
+    /// If set, the interface is resolved to a single IPv4 address at
+    /// startup and used for both the USB/IP wire port (3240) and the
+    /// REST API port (3241). Falls back to `--bind` if the interface
+    /// cannot be resolved (e.g. interface is down).
+    #[arg(long, value_name = "IFACE")]
+    pub bind_iface: Option<String>,
+
     /// TCP port (default: 3240)
     #[arg(short, long, default_value_t = 3240)]
     pub port: u16,
@@ -65,6 +73,100 @@ fn parse_vid_pid(s: &str) -> Result<(u16, u16), String> {
     Ok((vid, pid))
 }
 
+/// Resolve the bind address to a single IP string.
+///
+/// Precedence: if `iface` is set, look up that interface's primary
+/// IPv4 address and use it. If the lookup fails, fall back to the
+/// explicit `bind` value (so the server can still come up on a host
+/// that lacks the requested interface — e.g. a server that was
+/// previously running on `en0` and is now on `eth0`).
+///
+/// `lookup` is injected so the resolver can be tested without touching
+/// the host's real network interfaces.
+pub fn resolve_bind_address(
+    bind: &str,
+    iface: Option<&str>,
+    lookup: &dyn Fn(&str) -> Option<String>,
+) -> UsbIpResult<String> {
+    match iface {
+        Some(name) => match lookup(name) {
+            Some(ip) => Ok(ip),
+            None => {
+                tracing::warn!(
+                    iface = %name,
+                    "could not resolve --bind-iface; falling back to --bind"
+                );
+                Ok(bind.to_string())
+            },
+        },
+        None => Ok(bind.to_string()),
+    }
+}
+
+/// Look up the primary IPv4 address of a network interface by name.
+///
+/// Returns `None` if the interface has no IPv4 address, doesn't exist,
+/// or the platform doesn't support the lookup API.
+pub fn lookup_interface_ip(name: &str) -> Option<String> {
+    interface_lookup::lookup(name)
+}
+
+#[cfg(unix)]
+mod interface_lookup {
+    /// Look up the primary IPv4 address of `name` via `getifaddrs`.
+    pub fn lookup(name: &str) -> Option<String> {
+        // SAFETY: `getifaddrs` returns a linked list of `ifaddrs` nodes
+        // for every interface on the host. We free the head pointer with
+        // `freeifaddrs` and only read `ifa_name` (C string) and `ifa_addr`
+        // (sockaddr). The list is allocated by libc and remains valid
+        // until `freeifaddrs` is called.
+        let mut head: *mut libc::ifaddrs = std::ptr::null_mut();
+        // SAFETY: `head` is a valid out-pointer for `getifaddrs`.
+        if unsafe { libc::getifaddrs(&mut head) } != 0 {
+            return None;
+        }
+
+        let mut result: Option<String> = None;
+        let mut cursor = head;
+        while !cursor.is_null() {
+            // SAFETY: `cursor` is a valid `ifaddrs` node until we walk past it.
+            let ifa = unsafe { &*cursor };
+            // SAFETY: `ifa_name` is a NUL-terminated C string owned by libc.
+            let ifa_name = unsafe { std::ffi::CStr::from_ptr(ifa.ifa_name) }.to_str().unwrap_or("");
+            if ifa_name == name && !ifa.ifa_addr.is_null() {
+                // SAFETY: `ifa_addr` is a `sockaddr` for the family the
+                // node describes. We've already checked non-null.
+                let sa_family = unsafe { (*ifa.ifa_addr).sa_family } as i32;
+                if sa_family == libc::AF_INET {
+                    // SAFETY: `AF_INET` guarantees the address is a
+                    // `sockaddr_in`; cast and read the IPv4 byte.
+                    let sin = unsafe { &*(ifa.ifa_addr as *const libc::sockaddr_in) };
+                    let octets = sin.sin_addr.s_addr.to_ne_bytes();
+                    result =
+                        Some(format!("{}.{}.{}.{}", octets[0], octets[1], octets[2], octets[3]));
+                    break;
+                }
+            }
+            cursor = ifa.ifa_next;
+        }
+
+        // SAFETY: `head` was returned by `getifaddrs` and is the only
+        // pointer we need to free — `ifa_next` walks the list in place.
+        unsafe { libc::freeifaddrs(head) };
+        result
+    }
+}
+
+#[cfg(not(unix))]
+mod interface_lookup {
+    /// Stub for non-Unix platforms (e.g. Windows). The CLI flag is
+    /// accepted but the lookup always returns `None`; the operator
+    /// can still use `--bind` directly.
+    pub fn lookup(_name: &str) -> Option<String> {
+        None
+    }
+}
+
 #[tokio::main]
 async fn main() -> UsbIpResult<()> {
     tracing_subscriber::registry()
@@ -74,8 +176,14 @@ async fn main() -> UsbIpResult<()> {
 
     let cli = Cli::parse();
 
+    // Resolve --bind-iface (if set) to a single IP. The same address
+    // drives both the USB/IP wire port and the REST API port, so the
+    // operator only names the interface once.
+    let bind_address =
+        resolve_bind_address(&cli.bind, cli.bind_iface.as_deref(), &lookup_interface_ip)?;
+
     let config = ServerConfig {
-        bind_address: cli.bind,
+        bind_address,
         port: cli.port,
         allowed_vid_pid: cli.allow,
         require_confirmation: !cli.no_confirm,
@@ -157,5 +265,66 @@ mod tests {
         // `--api-port` (no value) → Some(3241), per acceptance criteria.
         let cli = Cli::parse_from(["usbip-server", "--api-port"]);
         assert_eq!(cli.api_port, Some(3241));
+    }
+
+    #[test]
+    fn cli_bind_iface_flag_accepted() {
+        // `--bind-iface en0` → bind_iface is Some("en0"); bind stays at default.
+        let cli = Cli::parse_from(["usbip-server", "--bind-iface", "en0"]);
+        assert_eq!(cli.bind_iface.as_deref(), Some("en0"));
+    }
+
+    #[test]
+    fn resolve_bind_address_uses_iface_ip() {
+        // When --bind-iface is set, resolve_bind_address must use the
+        // resolver to translate the interface name into an IP, not the
+        // --bind default. The resolver is injected so the test does not
+        // depend on the host's real network interfaces.
+        let lookup: Box<dyn Fn(&str) -> Option<String> + Send + Sync> =
+            Box::new(|name| match name {
+                "en0" => Some("192.168.1.21".to_string()),
+                _ => None,
+            });
+        let got = resolve_bind_address("0.0.0.0", Some("en0"), &lookup).unwrap();
+        assert_eq!(got, "192.168.1.21");
+    }
+
+    #[test]
+    fn resolve_bind_address_falls_back_when_iface_missing() {
+        // If the interface cannot be resolved, fall back to the --bind
+        // value rather than crashing — the user may have brought the
+        // interface up later, or be running on a host with no resolvable
+        // interfaces.
+        let lookup: Box<dyn Fn(&str) -> Option<String> + Send + Sync> = Box::new(|_| None);
+        let got = resolve_bind_address("10.0.0.5", Some("eth9"), &lookup).unwrap();
+        assert_eq!(got, "10.0.0.5");
+    }
+
+    #[test]
+    fn resolve_bind_address_passthrough_when_no_iface() {
+        // No --bind-iface: the resolver is never consulted; --bind is
+        // returned unchanged.
+        let lookup: Box<dyn Fn(&str) -> Option<String> + Send + Sync> =
+            Box::new(|_| panic!("resolver must not be called without --bind-iface"));
+        let got = resolve_bind_address("127.0.0.1", None, &lookup).unwrap();
+        assert_eq!(got, "127.0.0.1");
+    }
+
+    #[tokio::test]
+    async fn bind_address_from_iface_resolution_binds_only_to_that_ip() {
+        // The audit's acceptance criterion: when --bind-iface resolves
+        // to a specific IP, the listener must bind only to that IP,
+        // not 0.0.0.0. We exercise the resolution + bind path on
+        // 127.0.0.1 (loopback, always present) and verify the
+        // resulting socket reports that address — not 0.0.0.0.
+        let lookup: Box<dyn Fn(&str) -> Option<String> + Send + Sync> =
+            Box::new(|name| if name == "lo0" { Some("127.0.0.1".into()) } else { None });
+        let resolved = resolve_bind_address("0.0.0.0", Some("lo0"), &lookup).unwrap();
+        // Bind on an ephemeral port at the resolved address.
+        let listener = tokio::net::TcpListener::bind(format!("{resolved}:0")).await.unwrap();
+        let local = listener.local_addr().unwrap();
+        assert_eq!(local.ip().to_string(), "127.0.0.1");
+        assert_ne!(local.ip().to_string(), "0.0.0.0");
+        drop(listener);
     }
 }

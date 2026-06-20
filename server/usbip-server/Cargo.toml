@@ -40,6 +40,9 @@ chrono = { workspace = true }
 tower = { workspace = true }
 prometheus = { version = "0.13", features = ["process"] }
 
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 criterion.workspace = true
 tempfile = "3"
