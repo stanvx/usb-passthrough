@@ -177,6 +177,50 @@ pub fn decrypt(key: &LessSafeKey, wire_data: &[u8]) -> CryptoResult<Vec<u8>> {
     Ok(plaintext.to_vec())
 }
 
+/// Decrypt ciphertext produced by `encrypt_message()` / `encrypt_with_nonce()` in place.
+///
+/// Wire format: `[4-byte nonce_len (=12)][12-byte nonce][ciphertext || 16-byte GCM tag]`
+///
+/// On success, the buffer is truncated to drop the trailing 16-byte GCM scratch
+/// (which `open_in_place` zeroes on success), and a borrowed slice of the
+/// remaining plaintext is returned. No reallocation occurs; the buffer's
+/// `capacity()` is preserved across the call.
+pub fn decrypt_in_place<'a>(
+    key: &'a LessSafeKey,
+    buf: &'a mut Vec<u8>,
+) -> CryptoResult<&'a mut [u8]> {
+    if buf.len() < 4 + 12 + 16 {
+        // minimum: 4-byte len + 12-byte nonce + 16-byte tag
+        return Err(CryptoError::Decryption);
+    }
+
+    let nonce_len = u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
+    if nonce_len != 12 {
+        return Err(CryptoError::InvalidNonce);
+    }
+
+    let nonce_bytes: [u8; 12] = buf[4..16].try_into().map_err(|_| CryptoError::InvalidNonce)?;
+    let nonce = Nonce::assume_unique_for_key(nonce_bytes);
+    let aad = Aad::empty();
+
+    // `open_in_place` treats the trailing 16 bytes of the input slice as the
+    // GCM tag and uses them as scratch (zeroed on success). It returns a
+    // sub-slice that excludes those trailing 16 bytes — use the returned
+    // slice, not the input, to avoid shipping the scratch zeros back.
+    let plaintext_len = {
+        let buf_slice = &mut buf[16..];
+        let plaintext =
+            key.open_in_place(nonce, aad, buf_slice).map_err(|_| CryptoError::Decryption)?;
+        plaintext.len()
+    };
+
+    // Drop the trailing 16-byte scratch so the buffer length matches the
+    // plaintext. Capacity is preserved (no reallocation).
+    buf.truncate(16 + plaintext_len);
+
+    Ok(&mut buf[16..])
+}
+
 /// Decrypt with raw key bytes (for JNI bridge).
 pub fn decrypt_with_key_bytes(key_bytes: &[u8], wire_data: &[u8]) -> CryptoResult<Vec<u8>> {
     let unbound = UnboundKey::new(&AES_256_GCM, key_bytes).map_err(|_| CryptoError::Decryption)?;
@@ -270,6 +314,35 @@ mod tests {
         let decrypted = decrypt(&key, &encrypted).unwrap();
 
         assert_eq!(plaintext.as_slice(), &decrypted);
+    }
+
+    #[test]
+    fn test_decrypt_in_place_roundtrip() {
+        // Fixed shared secret for determinism (no key exchange needed).
+        let shared = [0x42u8; 32];
+        let key = derive_session_key(&shared).unwrap();
+
+        // 512-byte plaintext — large enough to make any extra copy visible.
+        let plaintext = vec![0xABu8; 512];
+
+        // Encrypt and move the wire buffer into a single owned Vec for in-place
+        // decryption. No intermediate copies should be required.
+        let mut wire = encrypt_message(&key, &plaintext).unwrap();
+
+        // Snapshot the in-place property: decrypt must mutate this buffer
+        // rather than allocate a fresh one.
+        let pre_capacity = wire.capacity();
+
+        // The new function does not exist yet — this is the RED step.
+        let plaintext_slice = decrypt_in_place(&key, &mut wire).unwrap();
+
+        // Returned slice must be byte-for-byte equal to the original plaintext.
+        assert_eq!(plaintext_slice, &plaintext[..]);
+
+        // In-place contract: capacity is preserved (no reallocation), and the
+        // returned sub-slice length matches the original plaintext length.
+        assert_eq!(plaintext_slice.len(), plaintext.len());
+        assert_eq!(wire.capacity(), pre_capacity);
     }
 
     #[test]

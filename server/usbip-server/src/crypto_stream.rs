@@ -143,8 +143,9 @@ impl CryptoStream {
         let mut ct = vec![0u8; len];
         self.stream.read_exact(&mut ct).await?;
 
-        crypto::decrypt(&self.key, &ct)
-            .map_err(|e| UsbIpError::from(ErrorKind::Encryption(e.to_string())))
+        let plaintext = crypto::decrypt_in_place(&self.key, &mut ct)
+            .map_err(|e| UsbIpError::from(ErrorKind::Encryption(e.to_string())))?;
+        Ok(plaintext.to_vec())
     }
 
     /// Encrypt and write one full USB/IP message (header + payload).
