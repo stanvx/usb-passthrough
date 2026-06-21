@@ -39,7 +39,7 @@ use usbip_core::urb::*;
 
 use crate::discovery::MdnsBrowser;
 use crate::reconnect::{ReconnectConfig, ReconnectDecision, ReconnectState};
-use crate::vhci::VhciDriver;
+use crate::vhci::{VhciBackend, VhciDriver};
 
 /// Client configuration.
 #[derive(Debug, Clone)]
@@ -71,7 +71,7 @@ impl Default for ClientConfig {
 /// USB/IP client.
 pub struct Client {
     config: ClientConfig,
-    vhci: Arc<VhciDriver>,
+    vhci: Arc<dyn VhciBackend>,
     /// Active connections: busid -> (stream, device_info).
     connections: Mutex<Vec<ActiveConnection>>,
 }
@@ -86,7 +86,15 @@ struct ActiveConnection {
 impl Client {
     pub fn new(config: ClientConfig) -> UsbIpResult<Self> {
         let vhci = VhciDriver::new()?;
-        Ok(Self { config, vhci: Arc::new(vhci), connections: Mutex::new(Vec::new()) })
+        Self::new_with_vhci(config, Arc::new(vhci))
+    }
+
+    /// Construct a client with an injected VHCI backend (test seam).
+    pub(crate) fn new_with_vhci(
+        config: ClientConfig,
+        vhci: Arc<dyn VhciBackend>,
+    ) -> UsbIpResult<Self> {
+        Ok(Self { config, vhci, connections: Mutex::new(Vec::new()) })
     }
 
     /// Discover servers via mDNS.
@@ -169,7 +177,7 @@ impl Client {
 
         // Do the initial import (connect + VHCI attach)
         let (device_entry, descriptors) =
-            do_import(addr_owned, &busid_owned, &vhci, config.tcp_nodelay).await?;
+            do_import(addr_owned, &busid_owned, &*vhci, config.tcp_nodelay).await?;
 
         // Store connection info
         {
@@ -250,7 +258,7 @@ impl Client {
         busid: &str,
     ) -> UsbIpResult<ImportedDevice> {
         let (device_entry, descriptors) =
-            do_import(addr, busid, &self.vhci, self.config.tcp_nodelay).await?;
+            do_import(addr, busid, &*self.vhci, self.config.tcp_nodelay).await?;
 
         {
             let mut conns = self.connections.lock().await;
@@ -288,7 +296,7 @@ pub struct ImportedDevice {
 async fn do_import(
     addr: SocketAddr,
     busid: &str,
-    vhci: &VhciDriver,
+    vhci: &dyn VhciBackend,
     tcp_nodelay: bool,
 ) -> UsbIpResult<(UsbIpDeviceEntry, Vec<u8>)> {
     let mut stream = TcpStream::connect(addr).await?;
@@ -365,7 +373,7 @@ async fn do_import(
 async fn urb_forwarding_task(
     addr: SocketAddr,
     busid: &str,
-    vhci: Arc<VhciDriver>,
+    vhci: Arc<dyn VhciBackend>,
     tcp_nodelay: bool,
 ) -> UsbIpResult<()> {
     let mut stream = tcp_connect_and_import(addr, busid, tcp_nodelay).await?;
@@ -374,7 +382,7 @@ async fn urb_forwarding_task(
     let span = info_span!("urb_forwarding", correlation_id = %correlation_id, busid = %busid, server = %addr);
     let _guard = span.enter();
 
-    let result = urb_forwarding_loop(&mut stream, &vhci).await;
+    let result = urb_forwarding_loop(&mut stream, &*vhci).await;
     info!("URB forwarding loop ended: {:?}", result.as_ref().err());
     result
 }
@@ -424,9 +432,10 @@ async fn tcp_connect_and_import(
     let mut entry_buf = vec![0u8; UsbIpDeviceEntry::SIZE];
     stream.read_exact(&mut entry_buf).await?;
 
-    // Read descriptor tree anchor bytes
-    let tree_estimate = 512;
-    let mut desc_buf = vec![0u8; tree_estimate];
+    // Read descriptor tree anchor bytes.
+    // Read a small chunk so we do not slurp the next message (e.g. RET_SUBMIT)
+    // that the server may have already queued on the wire.
+    let mut desc_buf = [0u8; 18];
     if let Ok(n) = stream.read(&mut desc_buf).await {
         if n == 0 {
             return Err(UsbIpError::from(ErrorKind::ConnectionClosed));
@@ -437,7 +446,7 @@ async fn tcp_connect_and_import(
 }
 
 /// Main URB forwarding loop — bidirectional proxy between VHCI and server.
-async fn urb_forwarding_loop(stream: &mut TcpStream, vhci: &VhciDriver) -> UsbIpResult<()> {
+async fn urb_forwarding_loop(stream: &mut TcpStream, vhci: &dyn VhciBackend) -> UsbIpResult<()> {
     let mut header_buf = [0u8; 8];
 
     loop {
@@ -517,4 +526,133 @@ async fn urb_forwarding_loop(stream: &mut TcpStream, vhci: &VhciDriver) -> UsbIp
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    //! RED tests for issue #28: `Client::new_with_vhci` injection seam.
+    //!
+    //! These tests assert the contract that the GREEN step must satisfy:
+    //! a `Client` constructed via `new_with_vhci` must route its VHCI
+    //! operations to the supplied backend, not to the platform default.
+    //! The tests drive the client through a real `TcpListener` playing
+    //! the role of a USB/IP server, send a crafted `USBIP_RET_SUBMIT`,
+    //! and observe the result on `MockVhciBackend`.
+
+    use super::*;
+
+    use std::sync::Arc as StdArc;
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    use usbip_core::protocol::{
+        UsbIpHeader, OP_REP_IMPORT, OP_REQ_IMPORT, STATUS_SUCCESS, URB_DIR_IN, USBIP_RET_SUBMIT,
+    };
+    use usbip_core::urb::UsbIpRetSubmit;
+
+    use crate::vhci::MockVhciBackend;
+    use crate::vhci::VhciBackend;
+
+    /// Build a minimal 312-byte `UsbIpDeviceEntry` for the test server.
+    fn make_device_entry_bytes(busid: &str) -> Vec<u8> {
+        let mut entry = vec![0u8; 312];
+        let busid_bytes = busid.as_bytes();
+        let copy_len = busid_bytes.len().min(31);
+        entry[0x100..0x100 + copy_len].copy_from_slice(&busid_bytes[..copy_len]);
+        entry
+    }
+
+    /// Minimal end-to-end RED: construct via `new_with_vhci`, drive a
+    /// single `USBIP_RET_SUBMIT` through `run_urb_forwarding`, and
+    /// confirm the injected mock recorded the completion.
+    #[tokio::test]
+    async fn test_new_with_vhci_routes_complete_urb_to_injected_backend() {
+        let mock = StdArc::new(MockVhciBackend::new());
+        let backend: StdArc<dyn VhciBackend> = mock.clone();
+
+        // Bind a localhost listener that will act as the USB/IP server.
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        // Server task: accept, complete the OP_REQ_IMPORT handshake,
+        // then send one USBIP_RET_SUBMIT, then close.
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+
+            // Read the 8-byte OP_REQ_IMPORT header.
+            let mut hdr = [0u8; 8];
+            sock.read_exact(&mut hdr).await.unwrap();
+            let cmd = u16::from_be_bytes([hdr[2], hdr[3]]);
+            assert_eq!(cmd, OP_REQ_IMPORT);
+
+            // Read the 32-byte busid.
+            let mut busid = [0u8; 32];
+            sock.read_exact(&mut busid).await.unwrap();
+
+            // Respond with OP_REP_IMPORT (status=0).
+            let reply = UsbIpHeader::with_status(OP_REP_IMPORT, STATUS_SUCCESS);
+            sock.write_all(reply.as_bytes()).await.unwrap();
+
+            // Send a device entry (312 bytes).
+            let entry = make_device_entry_bytes("1-1");
+            sock.write_all(&entry).await.unwrap();
+
+            // Send a minimal descriptor tree (just an 18-byte device
+            // descriptor is enough for the loop to read past the import
+            // and start the URB forwarding loop).
+            let mut desc = vec![0u8; 18];
+            desc[0] = 18; // bLength
+            desc[1] = 1; // DEVICE descriptor type
+                         // bcdUSB, bDeviceClass, ... all zero is fine for the loop.
+            sock.write_all(&desc).await.unwrap();
+
+            // Build a USBIP_RET_SUBMIT for an IN transfer with 4 bytes
+            // of data, seqnum=0xC0FFEE, devid=0, status=0.
+            let ret = UsbIpRetSubmit {
+                seqnum: zerocopy::byteorder::U32::new(0x00C0_FFEE),
+                devid: zerocopy::byteorder::U32::new(0),
+                direction: zerocopy::byteorder::U32::new(URB_DIR_IN),
+                ep: zerocopy::byteorder::U32::new(0),
+                status: zerocopy::byteorder::U32::new(0),
+                actual_length: zerocopy::byteorder::U32::new(4),
+                start_frame: zerocopy::byteorder::U32::new(0),
+                number_of_packets: zerocopy::byteorder::U32::new(0),
+                error_count: zerocopy::byteorder::U32::new(0),
+                setup: [0u8; 8],
+            };
+
+            // Hand-encode: the client reads an 8-byte UsbIpHeader first,
+            // then UsbIpRetSubmit::HEADER_SIZE (44) bytes, then data.
+            let mut msg = Vec::with_capacity(8 + UsbIpRetSubmit::HEADER_SIZE + 4);
+            let hdr = UsbIpHeader::new(USBIP_RET_SUBMIT);
+            msg.extend_from_slice(hdr.as_bytes());
+            msg.extend_from_slice(ret.as_bytes());
+            msg.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF]);
+            sock.write_all(&msg).await.unwrap();
+        });
+
+        // ── The constructor under test ──────────────────────────────
+        // This will fail to compile until GREEN adds Client::new_with_vhci.
+        let config = ClientConfig { auto_reconnect: false, ..ClientConfig::default() };
+        let client = Client::new_with_vhci(config, backend).expect("new_with_vhci must succeed");
+
+        // Drive one URB forwarding session. The server task will close
+        // the socket after sending the RET_SUBMIT, which causes the
+        // client's `read_exact` to error and the loop to return Ok(()).
+        let result = client.run_urb_forwarding(addr, "1-1").await;
+        assert!(result.is_ok(), "run_urb_forwarding returned: {:?}", result);
+
+        server.await.unwrap();
+
+        // ── Observable: the injected mock recorded the completion ──
+        let urbs = mock.urbs.lock().unwrap();
+        assert_eq!(urbs.len(), 1, "expected exactly one completed URB on the injected mock");
+        let (seqnum, devid, status, actual_len, data) = &urbs[0];
+        assert_eq!(*seqnum, 0x00C0_FFEE);
+        assert_eq!(*devid, 0);
+        assert_eq!(*status, 0);
+        assert_eq!(*actual_len, 4);
+        assert_eq!(data, &vec![0xDE, 0xAD, 0xBE, 0xEF]);
+    }
 }

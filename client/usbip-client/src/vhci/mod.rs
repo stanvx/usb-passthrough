@@ -62,6 +62,7 @@ pub(crate) trait VhciBackend: Send + Sync {
     ///
     /// Default implementation returns `Ok(0)` — override when the
     /// platform provides explicit port allocation (e.g. Linux sysfs).
+    #[allow(dead_code)] // platform impls override; Client no longer calls it directly
     fn find_free_port(&self) -> UsbIpResult<u32> {
         Ok(0)
     }
@@ -117,6 +118,35 @@ impl VhciDriver {
     }
 }
 
+impl VhciBackend for VhciDriver {
+    fn create_device(
+        &self,
+        entry: &UsbIpDeviceEntry,
+        descriptors: &[u8],
+    ) -> UsbIpResult<VhciDevice> {
+        self.backend.create_device(entry, descriptors)
+    }
+
+    fn complete_urb(
+        &self,
+        seqnum: u32,
+        devid: u32,
+        status: i32,
+        actual_length: u32,
+        data: &[u8],
+    ) -> UsbIpResult<()> {
+        self.backend.complete_urb(seqnum, devid, status, actual_length, data)
+    }
+
+    fn cancel_urb(&self, seqnum: u32, devid: u32) -> UsbIpResult<()> {
+        self.backend.cancel_urb(seqnum, devid)
+    }
+
+    fn remove_device(&self, port: u32) -> UsbIpResult<()> {
+        self.backend.remove_device(port)
+    }
+}
+
 // ─── VhciDevice ─────────────────────────────────────────────────
 
 /// Handle for a virtual USB device created via VHCI.
@@ -159,7 +189,7 @@ pub(crate) struct MockVhciBackend {
     /// Track created devices.
     devices: Mutex<Vec<VhciDevice>>,
     /// Track completed URBs.
-    urbs: Mutex<Vec<(u32, u32, i32, u32, Vec<u8>)>>,
+    pub(crate) urbs: Mutex<Vec<(u32, u32, i32, u32, Vec<u8>)>>,
     /// Next port number to assign.
     next_port: Mutex<u32>,
 }
