@@ -2,145 +2,63 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## Project
 
-USB/IP passthrough bridge — export a physical USB device on one machine, import it on another as if locally attached. Built on the USB/IP kernel protocol (RFC-compliant, see `PROTOCOL.md`). Target platforms: Linux, Windows (GUI + Service), Android (phone + TV). Alpha status.
+USB/IP passthrough bridge — export a physical USB device on one machine, import it on another as if locally attached. RFC-compliant USB/IP kernel protocol. Targets Linux, Windows, Android (phone + TV), plus a web console. Alpha status.
 
-## Terminology
+Strict terminology lives in `CONTEXT.md` — read it before renaming things. Architecture, thread model, and platform details: `ARCHITECTURE.md`. Wire protocol: `PROTOCOL.md`. Past + future work: `ROADMAP.md`.
 
-The project has strict terminology defined in `CONTEXT.md`:
-- **Passthrough**: byte-for-byte forwarding, not HID emulation
-- **Server**: machine that exports a physical USB device (libusb/WinUSB/Android USB Host)
-- **Client**: machine that imports and presents it locally (vhci-hcd/VHCI driver)
-- **Device class scope (v1.0)**: HID, mass storage, USB-to-serial, printers, scanners, bulk-only. Isochronous (audio, webcams) is out of scope
-- **Test rig**: QEMU-based Linux configfs + dummy_hcd/udc E2E harness running on cloud CI runners (ubuntu-latest). Replaces the earlier self-hosted runner design. See `ci/` directory and `.github/workflows/e2e-linux.yml`
-- **Reliability primitives**: structured errors with correlation IDs, hot-plug detection, auto-reconnect. Session persistence is deferred
-- **Service mode**: headless, survives reboots, no UI after setup (Windows Service / Android foreground service / systemd)
-
-## Build & Test Commands
+## Build & Test
 
 ```bash
-# Build entire Rust workspace
-cargo build --release
+cargo build --release                              # full workspace (Linux: excludes `windows`)
+cargo test --release --workspace                   # full test run
+cargo check --workspace --exclude anyplug          # fast compile check (Linux CI does this)
+cargo fmt --all -- --check                         # rustfmt is configured — see rustfmt.toml
+cargo clippy --workspace -- -D warnings            # CI gate; treat warnings as errors
+```
 
-# Run all Rust tests
-cargo test --release
+Per-crate:
+```bash
+cargo test --release -p usbip-core                 # only crate with real coverage today
+cargo test --release -p usbip-server               # passes vacuously
+cargo test --release -p usbip-client               # passes vacuously
+```
 
-# Run tests for a single crate
-cargo test --release -p usbip-core
-cargo test --release -p usbip-server
-cargo test --release -p usbip-client
-
-# Build specific crate
-cargo build --release -p usbip-server
-cargo build --release -p usbip-client
-cargo build --release -p windows
-
-# Check compilation without building (fast)
-cargo check --workspace
-
-# Android (requires gradlew wrapper — not yet committed; CI uses bare `gradle`)
+Android (committed wrapper exists — `./gradlew`, not bare `gradle`):
+```bash
 cd android
-gradle assembleDebug            # debug APK
-gradle lintDebug                # Android lint
-gradle :app:assembleRelease     # phone APK only
-gradle :tv:assembleRelease      # TV APK only
-
-# Format and lint
-cargo fmt --all -- --check    # check formatting
-cargo fmt --all               # auto-format
-cargo clippy --workspace -- -D warnings   # strict lint
+./gradlew lintDebug
+./gradlew :app:assembleDebug
+./gradlew :app:assembleRelease
+./gradlew :tv:assembleRelease
 ```
 
 ## Conventions
 
-- Prefer immutability — never mutate arguments, return new values
-- Many small files (200-400 lines typical, 800 max)
-- No emojis in code, comments, or docs
-- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`
-- Test before committing — run `/verify` (see `.claude/skills/verify/`)
+- Rust formatter: see `rustfmt.toml` — `max_width = 100`, `use_small_heuristics = "Max"`, edition 2021. Don't reformat against these.
+- Conventional commits (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`) — observed in practice.
+- No emojis in code, comments, or docs.
+- Prefer immutability, small files (200–400 lines typical, 800 max).
+- Pre-commit gate: run `/verify` (see `.claude/skills/verify/`). For TDD: `/tdd`.
+- Releases: `/release` skill handles version bumps, `CHANGELOG.md`, and tag push.
 
-## Architecture
+## Gotchas Claude gets wrong without this
 
-### Workspace Structure (4 Rust crates)
+- **`windows/Cargo.toml` does not use `version.workspace = true`** — its version is hardcoded `"0.3.0"`. The release skill bumps it manually. Don't "fix" this; the hardcoding is deliberate.
+- **CI excludes the `windows` crate on Linux** (`cargo check --workspace --exclude anyplug`, `cargo test --workspace --exclude anylinux`). Builds touching `windows/` won't be exercised by CI on ubuntu-latest.
+- **Release workflow uses `continue-on-error: true`** on Windows + Android-TV steps. A failed build can still produce an empty artifact — verify the artifacts tab, not the green checkmark.
+- **Android JNI crate (`android/rust/usbip-android/`) is NOT a workspace member.** It's compiled by the `rust-android` Gradle plugin from `android/core/`. Don't add it to root `Cargo.toml` members.
+- **`docs/adr/` numbering is inconsistent** (0002, 0004, plus a 3-digit `004-…`). Don't renumber — ADR ordering is not strict.
+- **rustfmt hook is configured** in `.claude/settings.json` (PostToolUse on `.rs` edits). Just write Rust; formatting happens automatically.
+- **`gradlew` wrapper is committed.** Don't recreate it or call out its absence.
 
-```
-Cargo.toml (workspace root)
-├── shared/usbip-core/    # Protocol types, crypto, errors — no platform deps
-├── server/usbip-server/  # USB/IP server binary (libusb, mDNS, tokio async TCP)
-├── client/usbip-client/  # USB/IP client binary (VHCI driver, mDNS, tokio)
-└── windows/              # Windows egui app + Windows Service + SetupAPI enum
-```
+## Skills (already wired in `.claude/`)
 
-### Data Flow
+- `/verify` — pre-commit gate (check + test + clippy + fmt).
+- `/tdd` — red-green-refactor workflow with crate-specific patterns.
+- `/release` — version bump + changelog + tag + monitor. `disable-model-invocation: true`.
 
-```
-export machine (Server)                    import machine (Client)
-Physical USB ← libusb/WinUSB ← TCP:3240 → VHCI driver → OS USB stack → App
-```
+## Docs
 
-A single URB round-trip: kernel ioctl → TCP send → network → TCP recv → USB controller → response. ~700µs RTT on gigabit Ethernet.
-
-### Key Dependencies
-
-- `zerocopy 0.8` — zero-copy wire-format serialization in protocol.rs/urb.rs
-- `crc32fast 1.4` — CRC32 for USB/IP headers
-- Windows crate: `egui`/`eframe`/`tray-icon` for GUI + system tray, `crossbeam-channel` for IPC, `winres` for resource embedding
-- Server and client crates expose a `lib.rs` public API — the windows crate depends on both as libraries, not just binaries
-
-### Thread Model
-
-Server: main → mDNS thread + TCP accept loop → per-client task (handle_devlist / handle_import / urb_loop) + libusb hotplug monitor.
-Client: main → mDNS browser + TCP connect → URB send/receive threads + VHCI dispatch + VHCI event thread for kernel completions.
-
-### Security
-
-AES-256-GCM tunnel (optional, per `--encrypt` flag). X25519 ECDH key exchange with pure-Rust field arithmetic. Pre-shared key or QR code pairing. Device VID:PID allowlisting. Connection confirmation prompt. See `SECURITY.md`.
-
-## Known Gaps
-
-- **Android build**: `gradlew` wrapper and `android/rust/usbip-android/` JNI crate are not yet
-  committed — `gradle assembleDebug` and CI Android lint won't work from a fresh checkout.
-- **Test coverage**: only `crypto.rs` and `windows_usb.rs` have tests; server, client, protocol,
-  and URB modules have none. `cargo test -p usbip-server` and `-p usbip-client` pass vacuously.
-- **Release workflow**: Windows and Android build steps use `continue-on-error: true`, so a
-  failed build still produces an empty release artifact.
-
-## CI
-
-GitHub Actions (`.github/workflows/ci.yml`):
-- `cargo check --workspace` + `cargo test --workspace` on ubuntu-latest (Rust stable)
-- `./gradlew lintDebug` on ubuntu-latest with JDK 17 (Temurin)
-
-Release workflow (`.github/workflows/release.yml`) handles multi-platform binary builds.
-
-## Documentation Index
-
-| File | Purpose |
-|------|---------|
-| `ARCHITECTURE.md` | Full system design, thread model, data flow, platform specifics, dependency map |
-| `PROTOCOL.md` | USB/IP wire protocol reference |
-| `ROADMAP.md` | Milestone tracking (M1-M14, past and future) |
-| `CONTEXT.md` | Canonical terminology and naming conventions |
-| `CONTRIBUTING.md` | Contribution guidelines |
-| `SECURITY.md` | Security model and vulnerability reporting |
-| `docs/BUILDING.md` | Build from source for all platforms |
-| `docs/SETUP.md` | Platform-specific setup guides |
-| `docs/PERFORMANCE.md` | Latency budget, tuning, benchmarks |
-| `docs/TROUBLESHOOTING.md` | Common issues and fixes |
-| `docs/ANDROID-TV.md` | TV-specific setup, sideloading, remote nav |
-| `docs/adr/` | Architecture Decision Records (3 ADRs) |
-
-## Agent skills
-
-### Issue tracker
-
-GitHub Issues, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Standard labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+`docs/BUILDING.md`, `docs/SETUP.md`, `docs/PERFORMANCE.md` (latency budget), `docs/TROUBLESHOOTING.md`, `docs/ANDROID-TV.md`, `docs/DOCKER.md`. Issue tracker conventions: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`.

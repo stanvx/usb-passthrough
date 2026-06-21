@@ -174,11 +174,10 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
-  # ── Android TV APK (experimental, non-blocking) ───────────────
+  # ── Android TV APK ────────────────────────────────────────────
   android-tv:
     name: Android TV APK
     runs-on: ubuntu-latest
-    continue-on-error: true
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_COMPILE_SDK: 34

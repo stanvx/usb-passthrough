@@ -16,6 +16,7 @@ Complete guide to compiling the USB/IP passthrough project for all target platfo
 - [Building for Linux](#building-for-linux)
 - [Building for Windows](#building-for-windows)
 - [Building for Android](#building-for-android)
+- [Building the Web Console](#building-the-web-console)
 - [Signing APKs](#signing-apks)
 - [Building Windows Installer (NSIS)](#building-windows-installer-nsis)
 - [Cross-Compilation](#cross-compilation)
@@ -470,6 +471,51 @@ By default, the build targets all Android ABIs. To limit scope:
 
 # Build for all except x86 (saves time if you don't need emulators)
 ./gradlew assembleRelease -PtargetABIs=arm64-v8a,armeabi-v7a
+```
+
+---
+
+## Building the Web Console
+
+The web console (`web/`) is a Next.js 14 application that pairs with `usbip-server`'s REST API for device inventory, connection management, latency dashboard, and config editing. It is the only non-Rust target in the repo. `next.config.js` is configured for **static export** (`output: 'export'`) — the console is a frontend only and does not embed in the server.
+
+### Prerequisites
+
+- Node.js 18+
+- pnpm (`npm install -g pnpm`)
+
+### Develop
+
+```bash
+cd web
+pnpm install
+pnpm dev                 # Next.js dev server on http://localhost:3000
+```
+
+The console calls the server's REST API directly from the browser (no dev-server proxy). The server must be running with CORS headers enabled (`tower-http` cors is wired in `usbip-server`).
+
+API base URL resolution, in order:
+
+1. `NEXT_PUBLIC_API_BASE` environment variable at build time
+2. `localStorage['anyplug_api_url']` (settable from the UI at runtime)
+3. Empty string (relative path — only works when console is served from the same origin as the server)
+
+### Build and Test
+
+```bash
+cd web
+pnpm build               # static export to web/out/
+pnpm test                # vitest unit tests
+pnpm lint                # next lint (ESLint config)
+```
+
+Static export output lives in `web/out/` and can be hosted on any static file server (nginx, Caddy, GitHub Pages, S3+CloudFront, etc.). The server does not bundle the console; deploy them separately. The server does not need the web console to function; the console is a frontend over the REST API only.
+
+### Output Locations
+
+```
+web/.next/              # dev/build artifacts (gitignored)
+web/out/                # static export from `pnpm build`
 ```
 
 ---
