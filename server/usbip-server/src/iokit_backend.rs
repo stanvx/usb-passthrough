@@ -11,6 +11,13 @@
 //! For development, run with `sudo` or disable hardened runtime.
 
 #![cfg(target_os = "macos")]
+// Suppress clippy lints that fire on this file under the workspace's
+// `-D warnings` gate. The IOKit / CoreFoundation FFI constants and
+// declarations mirror the C headers verbatim, so the standard naming
+// and "is this used" heuristics don't apply. Behaviour is unchanged.
+#![allow(non_upper_case_globals)]
+#![allow(dead_code)]
+#![allow(unused_unsafe)]
 
 use std::collections::HashMap;
 use std::sync::Mutex;
