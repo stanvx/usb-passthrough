@@ -88,6 +88,8 @@ fn test_app_with_exports(exports: HashMap<String, (SocketAddr, UsbIpDeviceEntry)
             port: 3240,
             api_port: 3241,
             encryption_enabled: false,
+            server_id: "test-server".to_string(),
+            server_name: "test-server".to_string(),
         })),
         latency_tx: usbip_server::api::new_latency_sender(),
     };
@@ -361,6 +363,8 @@ async fn test_post_connect_calls_importer_and_records_export() {
             port: 3240,
             api_port: 3241,
             encryption_enabled: false,
+            server_id: "test-server".to_string(),
+            server_name: "test-server".to_string(),
         })),
         latency_tx: usbip_server::api::new_latency_sender(),
     };
@@ -435,6 +439,8 @@ async fn test_post_disconnect_calls_importer_abort() {
             port: 3240,
             api_port: 3241,
             encryption_enabled: false,
+            server_id: "test-server".to_string(),
+            server_name: "test-server".to_string(),
         })),
         latency_tx: usbip_server::api::new_latency_sender(),
     };

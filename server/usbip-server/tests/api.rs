@@ -156,6 +156,8 @@ fn test_app_with_browser_and_lister_and_importer(
             port: 3240,
             api_port: 3241,
             encryption_enabled: false,
+            server_id: "test-server".to_string(),
+            server_name: "test-server".to_string(),
         })),
         latency_tx: api::new_latency_sender(),
     };
@@ -414,6 +416,8 @@ async fn disconnect_then_reconnect_round_trip() {
             port: 3240,
             api_port: 3241,
             encryption_enabled: false,
+            server_id: "test-server".to_string(),
+            server_name: "test-server".to_string(),
         })),
         latency_tx: api::new_latency_sender(),
     });
